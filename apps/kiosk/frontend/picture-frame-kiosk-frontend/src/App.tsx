@@ -14,7 +14,7 @@ export default function App() {
   const [callMode, setCallMode] = useState<CallMode>(null)
 
   const [photoUrl, setPhotoUrl] = useState<string>("/vite.svg")
-  const [volume, setVolume] = useState<number>(50)
+  const [volume, setVolume] = useState<number>(7)
   const [showVol, setShowVol] = useState(false)
 
   // --- keyboard shortcuts for testing
