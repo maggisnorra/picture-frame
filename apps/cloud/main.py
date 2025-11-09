@@ -69,4 +69,4 @@ def call_decline(sender: Literal["adam","steve"]):
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"app": "Cloud"}
