@@ -34,3 +34,7 @@ uvicorn main:app --reload --port 8001
 ```
 
 ### Frontend
+
+Run `npm run dev` inside [*picture-frame-kiosk-frontend*](/apps/kiosk/frontend/picture-frame-kiosk-frontend/).
+
+Remember to set the Chromium version.
