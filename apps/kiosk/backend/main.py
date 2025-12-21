@@ -6,6 +6,11 @@ import shutil, asyncio
 
 app = FastAPI(title="Kiosk Backend")
 
+
+#
+# Volume
+#
+
 @app.post("/volume/raise", status_code=202)
 def volume_raise():
     # TODO: increase the volume by one
@@ -15,6 +20,11 @@ def volume_raise():
 def volume_lower():
     # TODO: lower the volume by one
     return {"ok": True}
+
+
+#
+# Calling
+#
 
 @app.post("/call/initiate", status_code=202)
 def call_initiate():
@@ -40,6 +50,11 @@ def call_decline():
 def call_end():
     # TODO: end ongoing call
     return {"ok": True}
+
+
+#
+# Reaction (maybe :)
+#
 
 @app.post("/reaction/{message}", status_code=202)
 def reaction(message: str):
