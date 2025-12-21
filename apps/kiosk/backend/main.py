@@ -1,16 +1,10 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
+from pathlib import Path
+import shutil, asyncio
 
 app = FastAPI(title="Kiosk Backend")
-
-@app.get("/wifi")
-async def get_wifi():
-    # TODO: return a list of available WiFis
-    pass
-
-@app.post("/wifi")
-async def connect_wifi():
-    # TODO: connect to a specific WiFi
-    pass
 
 @app.post("/volume/raise", status_code=202)
 def volume_raise():
@@ -52,9 +46,25 @@ def reaction(message: str):
     # TODO: show the reaction
     return {"ok": True}
 
+ALLOWED = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+PICTURE_DIR = Path("media")
+PICTURE_DIR.mkdir(exist_ok=True)
+
 @app.post("/picture", status_code=201)
-def upload_picture(request: Request, file: UploadFile = File(...)):
-    # TODO: store picture and show it 
+async def upload_picture(file: UploadFile = File(...)):
+    ext = ALLOWED.get(file.content_type)
+    if not ext:
+        raise HTTPException(415, "Unsupported image type")
+    
+    dst = PICTURE_DIR / f"current{ext}"
+    with dst.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+    
     return {"ok": True}
 
 @app.get("/")
