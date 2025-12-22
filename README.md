@@ -148,3 +148,60 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now wifi-provision-check.timer
 ```
+
+
+### I2C sound
+
+Enable sound in `/boot/firmware/config.txt` by adding `dtoverlay=max98357a` under `[all]` section.
+
+Find sinks:
+```
+pactl list short sinks
+```
+
+Set default sink:
+´´´
+pactl set-default-sink alsa_output.platform-soc_107c000000_sound.stereo-fallback
+´´´
+
+Make sure it always sets it as default:
+```
+mkdir -p ~/bin
+tee ~/bin/audio-default.sh >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+SINK="alsa_output.platform-soc_107c000000_sound.stereo-fallback"
+
+for i in {1..40}; do
+  pactl info >/dev/null 2>&1 && break
+  sleep 0.1
+done
+
+pactl set-default-sink "$SINK"
+pactl set-sink-mute "$SINK" 0
+pactl set-sink-volume "$SINK" 40%
+EOF
+
+chmod +x ~/bin/audio-default.sh
+
+mkdir -p ~/.config/systemd/user
+tee ~/.config/systemd/user/audio-default.service >/dev/null <<'EOF'
+[Unit]
+Description=Set default audio sink to MAX98357A
+After=pipewire.service pipewire-pulse.service wireplumber.service
+Wants=pipewire-pulse.service wireplumber.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/audio-default.sh
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now audio-default.service
+
+systemctl --user status audio-default.service --no-pager
+```
