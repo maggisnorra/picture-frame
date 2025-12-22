@@ -1,6 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -9,6 +10,14 @@ from enum import Enum
 
 app = FastAPI(title="Kiosk Backend")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # adjust
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 #
 # SSE
@@ -16,7 +25,7 @@ app = FastAPI(title="Kiosk Backend")
 
 _subs: list[asyncio.Queue[str]] = []
 
-def sse_send(event: str, data: dict):
+def sse_send(event: str, data: Any = None):
     msg = json.dumps({"event": event, "data": data})
     for q in list(_subs):
         q.put_nowait(msg)
@@ -29,8 +38,11 @@ async def events():
     async def gen():
         try:
             while True:
-                msg = await q.get()
-                yield f"data: {msg}\n\n"
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=20.0)
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
         finally:
             _subs.remove(q)
 
@@ -50,6 +62,8 @@ def _run(cmd: list[str]) -> str:
         return (r.stdout or "").strip()
     except subprocess.CalledProcessError as e:
         raise HTTPException(500, (e.stderr or str(e)).strip())
+    except subprocess.TimeoutExpired as e:
+        raise HTTPException(500, f"Command timed out: {' '.join(cmd)}")
 
 def get_volume():
     out = _run(["pactl", "get-sink-volume", SOUND_SINK])
@@ -101,9 +115,6 @@ class CallSession(BaseModel):
     call_id: str
     state: CallState
     created_at: float = Field(default_factory=lambda: time.time())
-    
-class CallInitiateIn(BaseModel):
-    None
 
 class CallReceiveIn(BaseModel):
     call_id: str
@@ -124,14 +135,14 @@ def push_call(session: Optional[CallSession], extra: Dict[str, Any] | None = Non
     sse_send("call", payload)
 
 @app.post("/call/initiate", status_code=202)
-def call_initiate(body: CallInitiateIn):
+def call_initiate():
     global _call
     with _call_lock:
         if _call and _call.state not in (CallState.idle, CallState.ended):
             raise HTTPException(409, "Already in a call flow")
 
         call_id = uuid.uuid4().hex
-        _call = CallSession(call_id=call_id, state=CallState.outgoing_ringing, peer=body.peer)
+        _call = CallSession(call_id=call_id, state=CallState.outgoing_ringing)
 
     push_call(_call)
     return {"ok": True, "call_id": call_id, "state": _call.state}
@@ -143,7 +154,7 @@ def call_receive(body: CallReceiveIn):
         if _call and _call.state not in (CallState.idle, CallState.ended):
             raise HTTPException(409, "Busy")
 
-        _call = CallSession(call_id=body.call_id, state=CallState.incoming_ringing, peer=body.peer)
+        _call = CallSession(call_id=body.call_id, state=CallState.incoming_ringing)
 
     push_call(_call)
     return {"ok": True, "call_id": body.call_id, "state": _call.state}
@@ -221,10 +232,10 @@ ALLOWED = {
     "image/webp": ".webp",
 }
 
-PICTURE_DIR = Path("media")
+PICTURE_DIR = Path("pics")
 PICTURE_DIR.mkdir(exist_ok=True)
 
-app.mount("/media", StaticFiles(directory=str(PICTURE_DIR)), name="media")
+app.mount("/pics", StaticFiles(directory=str(PICTURE_DIR)), name="pics")
 
 @app.post("/picture", status_code=201)
 async def upload_picture(file: UploadFile = File(...)):
@@ -238,10 +249,10 @@ async def upload_picture(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, out)
     tmp.replace(dst)
     
-    sse_send("picture_updated", None)
+    sse_send("picture", {"url": f"/pics/current{ext}"})
     
     await file.close()
-    return {"ok": True}
+    return {"ok": True, "url": f"/pics/current{ext}"}
 
 
 #
