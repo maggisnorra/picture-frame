@@ -12,7 +12,12 @@ app = FastAPI(title="Kiosk Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # adjust
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,11 +33,14 @@ _subs: list[asyncio.Queue[str]] = []
 def sse_send(event: str, data: Any = None):
     msg = json.dumps({"event": event, "data": data})
     for q in list(_subs):
-        q.put_nowait(msg)
+        try:
+            q.put_nowait(msg)
+        except asyncio.QueueFull:
+            pass
 
 @app.get("/events")
 async def events():
-    q: asyncio.Queue[str] = asyncio.Queue()
+    q: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
     _subs.append(q)
 
     async def gen():
@@ -54,7 +62,7 @@ async def events():
 #
 
 SOUND_SINK = "alsa_output.platform-soc_107c000000_sound.stereo-fallback"
-VOLUME_STEP = "5%"
+VOLUME_STEP = 5
 
 def _run(cmd: list[str]) -> str:
     try:
@@ -69,19 +77,31 @@ def get_volume():
     out = _run(["pactl", "get-sink-volume", SOUND_SINK])
     m = re.search(r"(\d+)%", out)
     vol = int(m.group(1)) if m else None
+    if vol is None:
+        raise HTTPException(500, f"Could not parse volume: {out}")
     muted = "MUTED" in _run(["pactl", "get-sink-mute", SOUND_SINK])
     return vol, muted
 
+def set_volume_clamped(new_percent: int):
+    new_percent = max(0, min(100, new_percent))
+    _run(["pactl", "set-sink-volume", SOUND_SINK, f"{new_percent}%"])
+    if new_percent > 0:
+        _run(["pactl", "set-sink-mute", SOUND_SINK, "0"])
+    elif new_percent == 0:
+        _run(["pactl", "set-sink-mute", SOUND_SINK, "1"])
+
 @app.post("/volume/raise", status_code=202)
 def volume_raise():
-    _run(["pactl", "set-sink-volume", SOUND_SINK, f"+{VOLUME_STEP}"])
+    vol, muted = get_volume()
+    set_volume_clamped(vol + VOLUME_STEP)
     vol, muted = get_volume()
     sse_send("volume", {"volume_percent": vol, "muted": muted})
     return {"ok": True, "volume_percent": vol, "muted": muted}
 
 @app.post("/volume/lower", status_code=202)
 def volume_lower():
-    _run(["pactl", "set-sink-volume", SOUND_SINK, f"-{VOLUME_STEP}"])
+    vol, muted = get_volume()
+    set_volume_clamped(vol - VOLUME_STEP)
     vol, muted = get_volume()
     sse_send("volume", {"volume_percent": vol, "muted": muted})
     return {"ok": True, "volume_percent": vol, "muted": muted}
@@ -145,7 +165,7 @@ def call_initiate():
         _call = CallSession(call_id=call_id, state=CallState.outgoing_ringing)
 
     push_call(_call)
-    return {"ok": True, "call_id": call_id, "state": _call.state}
+    return {"ok": True, "call": _call.model_dump()}
 
 @app.post("/call/receive", status_code=202)
 def call_receive(body: CallReceiveIn):
@@ -157,7 +177,7 @@ def call_receive(body: CallReceiveIn):
         _call = CallSession(call_id=body.call_id, state=CallState.incoming_ringing)
 
     push_call(_call)
-    return {"ok": True, "call_id": body.call_id, "state": _call.state}
+    return {"ok": True, "call": _call.model_dump()}
 
 @app.post("/call/accept", status_code=202)
 def call_accept(body: CallActionIn):
@@ -171,7 +191,7 @@ def call_accept(body: CallActionIn):
         _call.state = CallState.connecting
 
     push_call(_call)
-    return {"ok": True, "call_id": _call.call_id, "state": _call.state}
+    return {"ok": True, "call": _call.model_dump()}
 
 @app.post("/call/decline", status_code=202)
 def call_decline(body: CallActionIn):
@@ -207,6 +227,14 @@ def call_state():
         if not _call:
             return {"state": CallState.idle, "call": None}
         return {"state": _call.state, "call": _call.model_dump()}
+    
+@app.post("/call/reset", status_code=202)
+def call_reset():
+    global _call
+    with _call_lock:
+        _call = None
+    push_call(None, extra={"reason": "reset"})
+    return {"ok": True}
 
 
 #
