@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 import os, uuid
 
-app = FastAPI(title="Cloud API")
+app = FastAPI(title="Remote controller")
 
 DATA_DIR = Path(__file__).resolve().parent / "data" / "images"
 DATA_DIR.mkdir(parents=True, exist_ok=True)

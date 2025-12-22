@@ -1,24 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
 import { FrameLayout, MediaSurface } from './components/FrameLayout'
 import { VolumeToast, CallIncoming, CallOutgoing } from './components/Overlays'
+import { useKioskEvents } from "./hooks/useKioskEvents";
 import './App.css'
+import type { CallPayload/*, CallState*/ } from './types/push';
 
 // each state
 export type Mode = "picture" | "call" | "ended" | "instructions"
 export type CallMode = "caller" | "callee" | null
 
-export const MAX_VOLUME = 15;
+export const MAX_VOLUME = 100;
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? ""; // "" for same-origin kiosk
 
 export default function App() {
   const [mode, setMode] = useState<Mode>("picture")
   const [callMode, setCallMode] = useState<CallMode>(null)
 
   const [photoUrl, setPhotoUrl] = useState<string>("/vite.svg")
-  const [volume, setVolume] = useState<number>(7)
+  const [volume, setVolume] = useState<number>(40)
   const [showVol, setShowVol] = useState(false)
 
+  //const [callId, setCallId] = useState<string | null>(null);
+  //const [callState, setCallState] = useState<CallState>("idle");
+
   // --- keyboard shortcuts for testing
-  useEffect(() => {
+  /*useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowUp") flashVolume(Math.min(MAX_VOLUME, volume + 1))
       if (e.key === "ArrowDown") flashVolume(Math.max(0, volume - 1))
@@ -31,16 +38,73 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [volume])
+  }, [volume])*/
 
   const volTimer = useRef<number | null>(null);
-
   function flashVolume(v: number) {
     setVolume(v)
+    // TODO: maybe add mute?
     setShowVol(true)
     if (volTimer.current) window.clearTimeout(volTimer.current);
     volTimer.current = window.setTimeout(() => setShowVol(false), 1200);
   }
+
+  useEffect(() => {
+    fetch(`${API_BASE}/volume`)
+      .then((r) => r.json() as Promise<{ volume_percent: number; muted: boolean }>)
+      .then((v) => {
+        flashVolume(v.volume_percent);
+        setShowVol(false);
+      })
+      .catch(() => {});
+
+    fetch(`${API_BASE}/call/state`)
+      .then((r) => r.json() as Promise<CallPayload>)
+      .then((s) => applyCallSnapshot(s))
+      .catch(() => {});
+  }, []);
+
+
+  function applyCallSnapshot(p: CallPayload) {
+    const st = p.state;
+    //setCallState(st);
+    //setCallId(p.call?.call_id ?? null);
+
+    if (st === "idle" || st === "ended") {
+      setMode("picture");
+      setCallMode(null);
+      return;
+    }
+    setMode("call");
+    if (st === "incoming_ringing") setCallMode("callee");
+    else if (st === "outgoing_ringing") setCallMode("caller");
+    else setCallMode(null); // connecting / in_call → hide ringing overlays
+  }
+
+  useKioskEvents({
+    apiBase: API_BASE,
+    onMessage: (msg) => {
+      if (msg.event === "volume") {
+        flashVolume(msg.data.volume_percent);
+      }
+
+      if (msg.event === "picture") {
+        // cache-bust so the <img> reloads even if URL is the same
+        setPhotoUrl(`${API_BASE}${msg.data.url}?t=${Date.now()}`);
+        setMode((prev) => (prev === "call" ? prev : "picture"));
+      }
+
+      if (msg.event === "call") {
+        // msg.data is the payload you send in push_call()
+        applyCallSnapshot(msg.data);
+      }
+
+      if (msg.event === "reaction") {
+        // TODO: show reaction overlay
+        console.log("reaction:", msg.data.message);
+      }
+    },
+  });
 
   // --- Example SSE hook (point to your FastAPI endpoint)
   // useSSE("/events", (msg: PushMsg) => {

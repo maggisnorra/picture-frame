@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,9 @@ import shutil, asyncio, subprocess, re, json, time, uuid, threading
 from enum import Enum
 
 app = FastAPI(title="Kiosk Backend")
+
+api = APIRouter(prefix="/api")
+app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,7 +41,7 @@ def sse_send(event: str, data: Any = None):
         except asyncio.QueueFull:
             pass
 
-@app.get("/events")
+@api.get("/events")
 async def events():
     q: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
     _subs.append(q)
@@ -90,7 +93,7 @@ def set_volume_clamped(new_percent: int):
     elif new_percent == 0:
         _run(["pactl", "set-sink-mute", SOUND_SINK, "1"])
 
-@app.post("/volume/raise", status_code=202)
+@api.post("/volume/raise", status_code=202)
 def volume_raise():
     vol, muted = get_volume()
     set_volume_clamped(vol + VOLUME_STEP)
@@ -98,7 +101,7 @@ def volume_raise():
     sse_send("volume", {"volume_percent": vol, "muted": muted})
     return {"ok": True, "volume_percent": vol, "muted": muted}
 
-@app.post("/volume/lower", status_code=202)
+@api.post("/volume/lower", status_code=202)
 def volume_lower():
     vol, muted = get_volume()
     set_volume_clamped(vol - VOLUME_STEP)
@@ -106,14 +109,14 @@ def volume_lower():
     sse_send("volume", {"volume_percent": vol, "muted": muted})
     return {"ok": True, "volume_percent": vol, "muted": muted}
 
-@app.post("/volume/mute", status_code=202)
+@api.post("/volume/mute", status_code=202)
 def volume_mute_toggle():
     _run(["pactl", "set-sink-mute", SOUND_SINK, "toggle"])
     vol, muted = get_volume()
     sse_send("volume", {"volume_percent": vol, "muted": muted})
     return {"ok": True, "volume_percent": vol, "muted": muted}
 
-@app.get("/volume")
+@api.get("/volume")
 def volume_get():
     vol, muted = get_volume()
     return {"volume_percent": vol, "muted": muted}
@@ -136,7 +139,7 @@ class CallSession(BaseModel):
     state: CallState
     created_at: float = Field(default_factory=lambda: time.time())
 
-class CallReceiveIn(BaseModel):
+class CallStartIn(BaseModel):
     call_id: str
 
 class CallActionIn(BaseModel):
@@ -154,21 +157,20 @@ def push_call(session: Optional[CallSession], extra: Dict[str, Any] | None = Non
         payload.update(extra)
     sse_send("call", payload)
 
-@app.post("/call/initiate", status_code=202)
-def call_initiate():
+@api.post("/call/initiate", status_code=202)
+def call_initiate(body: CallStartIn):
     global _call
     with _call_lock:
         if _call and _call.state not in (CallState.idle, CallState.ended):
             raise HTTPException(409, "Already in a call flow")
 
-        call_id = uuid.uuid4().hex
-        _call = CallSession(call_id=call_id, state=CallState.outgoing_ringing)
+        _call = CallSession(call_id=body.call_id, state=CallState.outgoing_ringing)
 
     push_call(_call)
     return {"ok": True, "call": _call.model_dump()}
 
-@app.post("/call/receive", status_code=202)
-def call_receive(body: CallReceiveIn):
+@api.post("/call/receive", status_code=202)
+def call_receive(body: CallStartIn):
     global _call
     with _call_lock:
         if _call and _call.state not in (CallState.idle, CallState.ended):
@@ -179,7 +181,7 @@ def call_receive(body: CallReceiveIn):
     push_call(_call)
     return {"ok": True, "call": _call.model_dump()}
 
-@app.post("/call/accept", status_code=202)
+@api.post("/call/accept", status_code=202)
 def call_accept(body: CallActionIn):
     global _call
     with _call_lock:
@@ -193,7 +195,7 @@ def call_accept(body: CallActionIn):
     push_call(_call)
     return {"ok": True, "call": _call.model_dump()}
 
-@app.post("/call/decline", status_code=202)
+@api.post("/call/decline", status_code=202)
 def call_decline(body: CallActionIn):
     global _call
     with _call_lock:
@@ -208,7 +210,7 @@ def call_decline(body: CallActionIn):
     push_call(None, extra={"reason": "declined", "ended_call_id": ended_call.call_id})
     return {"ok": True}
 
-@app.post("/call/end", status_code=202)
+@api.post("/call/end", status_code=202)
 def call_end(body: CallActionIn):
     global _call
     with _call_lock:
@@ -221,14 +223,14 @@ def call_end(body: CallActionIn):
     push_call(None, extra={"reason": "ended", "ended_call_id": ended_call.call_id})
     return {"ok": True}
 
-@app.get("/call/state")
+@api.get("/call/state")
 def call_state():
     with _call_lock:
         if not _call:
             return {"state": CallState.idle, "call": None}
         return {"state": _call.state, "call": _call.model_dump()}
     
-@app.post("/call/reset", status_code=202)
+@api.post("/call/reset", status_code=202)
 def call_reset():
     global _call
     with _call_lock:
@@ -244,7 +246,7 @@ def call_reset():
 class ReactionIn(BaseModel):
     message: str
 
-@app.post("/reaction", status_code=202)
+@api.post("/reaction", status_code=202)
 def reaction(body: ReactionIn):
     sse_send("reaction", body.model_dump())
     return {"ok": True}
@@ -265,7 +267,7 @@ PICTURE_DIR.mkdir(exist_ok=True)
 
 app.mount("/pics", StaticFiles(directory=str(PICTURE_DIR)), name="pics")
 
-@app.post("/picture", status_code=201)
+@api.post("/picture", status_code=201)
 async def upload_picture(file: UploadFile = File(...)):
     ext = ALLOWED.get(file.content_type)
     if not ext:
