@@ -54,6 +54,55 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
+Install `cloudflared`:
+```
+sudo apt-get update
+sudo apt-get install -y curl
+
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg \
+  | sudo tee /usr/share/keyrings/cloudflare-public-v2.gpg >/dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main" \
+  | sudo tee /etc/apt/sources.list.d/cloudflared.list
+
+sudo apt-get update
+sudo apt-get install -y cloudflared
+cloudflared --version
+```
+
+Set up tunnel:
+```
+cloudflared tunnel login
+cloudflared tunnel create remote-vps
+cloudflared tunnel route dns remote-vps frame.maggisnorra.is
+```
+
+Create the tunnel config (using tunnel uuid from last step):
+```
+sudo mkdir -p /etc/cloudflared
+
+sudo tee /etc/cloudflared/config.yml >/dev/null <<'YAML'
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: frame.maggisnorra.is
+    service: http://localhost:8000
+  - service: http_status:404
+YAML
+
+sudo cp /root/.cloudflared/*.json /etc/cloudflared/
+sudo chmod 600 /etc/cloudflared/*.json
+```
+
+Make it a service:
+```
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
+sudo systemctl status cloudflared --no-pager
+```
+
 
 ### Other (obsolete?)
 
