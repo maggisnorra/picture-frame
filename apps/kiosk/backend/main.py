@@ -10,7 +10,6 @@ from enum import Enum
 app = FastAPI(title="Kiosk Backend")
 
 api = APIRouter(prefix="/api")
-app.include_router(api)
 
 
 #
@@ -269,6 +268,9 @@ async def upload_picture(file: UploadFile = File(...)):
     
     await file.close()
     return {"ok": True, "url": f"/pics/current{ext}"}
+
+
+app.include_router(api)
 
 
 #

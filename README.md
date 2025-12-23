@@ -103,6 +103,12 @@ sudo systemctl enable --now cloudflared
 sudo systemctl status cloudflared --no-pager
 ```
 
+Rebuild docker:
+```
+docker compose down
+docker compose build --no-cache
+docker compose up -d
+```
 
 ### Other (obsolete?)
 
