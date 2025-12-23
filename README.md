@@ -141,6 +141,8 @@ WorkingDirectory=/home/maggisnorrason/picture-frame/apps/kiosk/backend
 ExecStart=/home/maggisnorrason/picture-frame/apps/kiosk/backend/.venv/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=2
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 
 [Install]
 WantedBy=multi-user.target

@@ -3,6 +3,7 @@ services:
     build: .
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    environment:
+      ADAM_FRAME_API: "https://frame-adam.maggisnorra.is/api"
+      STEVE_FRAME_API: "https://frame-steve.maggisnorra.is/api"
     restart: unless-stopped
