@@ -3,7 +3,7 @@ Web controlled Full HD digital picture frame with video call functionality.
 
 ## Developer info
 
-Adam is `maggis-frame-1` and Steve is `maggis-frame-2`.
+**Adam** is `maggis-frame-1` and **Steve** is `maggis-frame-2`.
 
 Frame URLs:
 - adam-frame.maggisnorra.is (React)
@@ -106,7 +106,7 @@ cloudflared tunnel create <frame-adam|frame-steve>
 cloudflared tunnel route dns <frame-adam|frame-steve> <frame-adam|frame-steve>.maggisnorra.is
 ```
 
-Create the tunnel config:
+Create the tunnel config (using tunnel uuid from last step):
 ```
 sudo mkdir -p /etc/cloudflared
 sudo tee /etc/cloudflared/config.yml >/dev/null <<'YAML'
@@ -149,6 +149,12 @@ uvicorn main:app --reload --port 8000
 ### Frontend
 
 Run `npm run dev` inside [*picture-frame-kiosk-frontend*](/apps/kiosk/frontend/picture-frame-kiosk-frontend/).
+
+To build:
+```
+npm ci
+npm run build
+```
 
 Remember to set the Chromium version.
 
