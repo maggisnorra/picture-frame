@@ -71,8 +71,8 @@ Wants=network-online.target
 
 [Service]
 User=maggisnorrason
-WorkingDirectory=/home/maggisnorrason/kiosk/backend
-ExecStart=/home/maggisnorrason/kiosk/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+WorkingDirectory=/home/maggisnorrason/picture-frame/apps/kiosk/backend
+ExecStart=/home/maggisnorrason/picture-frame/apps/kiosk/backend/.venv/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=2
 
@@ -82,18 +82,27 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now kiosk-api
+sudo systemctl status kiosk-api --no-pager
 ```
 
 Install and set up Cloudflare tunnel:
 ```
-sudo apt update
-sudo apt install -y cloudflared
+sudo apt-get update
+sudo apt-get install -y curl
+
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg \
+  | sudo tee /usr/share/keyrings/cloudflare-public-v2.gpg >/dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main" \
+  | sudo tee /etc/apt/sources.list.d/cloudflared.list
+
+sudo apt-get update
+sudo apt-get install -y cloudflared
 cloudflared --version
 
 cloudflared tunnel login
-
 cloudflared tunnel create <frame-adam|frame-steve>
-
 cloudflared tunnel route dns <frame-adam|frame-steve> <frame-adam|frame-steve>.maggisnorra.is
 ```
 
@@ -101,11 +110,11 @@ Create the tunnel config:
 ```
 sudo mkdir -p /etc/cloudflared
 sudo tee /etc/cloudflared/config.yml >/dev/null <<'YAML'
-tunnel: <PUT_TUNNEL_UUID_HERE>
-credentials-file: /etc/cloudflared/<PUT_TUNNEL_UUID_HERE>.json
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
 
 ingress:
-  - hostname: <PUT_HOSTNAME_HERE>
+  - hostname: <frame-adam|steve-adam>.maggisnorra.is
     service: http://127.0.0.1:8000
   - service: http_status:404
 YAML
@@ -116,7 +125,7 @@ sudo chmod 600 /etc/cloudflared/*.json
 
 Make it a service:
 ```
-sudo cloudflared service install --config /etc/cloudflared/config.yml
+sudo cloudflared service install
 sudo systemctl enable --now cloudflared
 sudo systemctl status cloudflared --no-pager
 ```
@@ -129,12 +138,12 @@ FastAPI.
 Setup:
 ```
 python -m venv .venv && source .venv/bin/activate
-pip install "fastapi>=0.115" "uvicorn[standard]" "SQLAlchemy>=2.0" pydantic pydantic-settings alembic "psycopg[binary]"
+pip install -r requirements.txt
 ```
 
 Run:
 ```
-uvicorn main:app --reload --port 8001
+uvicorn main:app --reload --port 8000
 ```
 
 ### Frontend
