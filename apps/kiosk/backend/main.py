@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -12,19 +11,6 @@ app = FastAPI(title="Kiosk Backend")
 
 api = APIRouter(prefix="/api")
 app.include_router(api)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 #
@@ -286,9 +272,28 @@ async def upload_picture(file: UploadFile = File(...)):
 
 
 #
-# Root
+# Serve React
 #
 
-@app.get("/")
-async def root():
-    return {"app": "Kiosk Backend"}
+STATIC_DIR = Path(__file__).parent / "static"
+
+if STATIC_DIR.exists():
+    @app.get("/")
+    def spa_root():
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/{path:path}")
+    def spa_fallback(path: str):
+        # let /api/* be handled by your API routes
+        if path.startswith("api/"):
+            raise HTTPException(status_code=404)
+
+        p = STATIC_DIR / path
+        if p.is_file():
+            return FileResponse(p)
+
+        return FileResponse(STATIC_DIR / "index.html")
+else:
+    @app.get("/")
+    async def root():
+        return {"app": "Kiosk Backend, static file not found..."}

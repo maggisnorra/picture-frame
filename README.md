@@ -16,7 +16,7 @@ Cloud URLs:
 - frame.maggisnorra.is/steve (React remote controller)
 - frame.maggisnorra.is/api (FastAPI remote controller in cloud)
 
-## Cloud
+## Remote controller
 
 ### Hetzner server
 
@@ -44,7 +44,7 @@ sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-### Other
+### Other (obsolete?)
 
 FastAPI.
 
@@ -60,6 +60,67 @@ uvicorn main:app --reload --port 8000
 ```
 
 ## Kiosk
+
+Create and enable service to run on frame:
+```
+sudo tee /etc/systemd/system/kiosk-api.service >/dev/null <<'EOF'
+[Unit]
+Description=Kiosk FastAPI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=maggisnorrason
+WorkingDirectory=/home/maggisnorrason/kiosk/backend
+ExecStart=/home/maggisnorrason/kiosk/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now kiosk-api
+```
+
+Install and set up Cloudflare tunnel:
+```
+sudo apt update
+sudo apt install -y cloudflared
+cloudflared --version
+
+cloudflared tunnel login
+
+cloudflared tunnel create <frame-adam|frame-steve>
+
+cloudflared tunnel route dns <frame-adam|frame-steve> <frame-adam|frame-steve>.maggisnorra.is
+```
+
+Create the tunnel config:
+```
+sudo mkdir -p /etc/cloudflared
+sudo tee /etc/cloudflared/config.yml >/dev/null <<'YAML'
+tunnel: <PUT_TUNNEL_UUID_HERE>
+credentials-file: /etc/cloudflared/<PUT_TUNNEL_UUID_HERE>.json
+
+ingress:
+  - hostname: <PUT_HOSTNAME_HERE>
+    service: http://127.0.0.1:8000
+  - service: http_status:404
+YAML
+
+sudo cp ~/.cloudflared/*.json /etc/cloudflared/
+sudo chmod 600 /etc/cloudflared/*.json
+```
+
+Make it a service:
+```
+sudo cloudflared service install --config /etc/cloudflared/config.yml
+sudo systemctl enable --now cloudflared
+sudo systemctl status cloudflared --no-pager
+```
+
 
 ### Backend
 

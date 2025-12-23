@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fjarstýring f. myndaramma</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/cyborg/bootstrap.min.css">
+</head>
+<body>
+  <div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h1 class="h4 mb-1">Fjarstýring</h1>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12 col-lg-6">
+        <div class="card">
+          <div class="card-header">Hljóð</div>
+          <div class="card-body d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" data-action="volume/raise">Hækka</button>
+            <button class="btn btn-primary" data-action="volume/lower">Lækka</button>
+            <button class="btn btn-warning" data-action="volume/mute">Mute</button>
+            <button class="btn btn-outline-secondary" data-action="status" data-method="GET">Status</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-lg-6">
+        <div class="card">
+          <div class="card-header">Myndsímtal</div>
+          <div class="card-body d-flex flex-wrap gap-2">
+            <button class="btn btn-success" data-action="call/initiate">Hringja</button>
+            <button class="btn btn-success" data-action="call/accept">Samþykkja</button>
+            <button class="btn btn-danger" data-action="call/decline">Hafna</button>
+            <button class="btn btn-danger" data-action="call/end">Skella á</button>
+            <button class="btn btn-outline-secondary" data-action="call/reset">Reset</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <pre class="mt-3 p-3 border rounded bg-dark text-light" id="log">ready</pre>
+  </div>
+
+  <script>window.__SELF__ = "{{ self_user }}";</script>
+  <script src="/static/remote.js" defer></script>
+</body>
+</html>
