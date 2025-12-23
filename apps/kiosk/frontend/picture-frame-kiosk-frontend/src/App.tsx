@@ -11,7 +11,7 @@ export type CallMode = "caller" | "callee" | null
 
 export const MAX_VOLUME = 100;
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? ""; // "" for same-origin kiosk
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api"; // "" for same-origin kiosk
 
 export default function App() {
   const [mode, setMode] = useState<Mode>("picture")
@@ -90,7 +90,7 @@ export default function App() {
 
       if (msg.event === "picture") {
         // cache-bust so the <img> reloads even if URL is the same
-        setPhotoUrl(`${API_BASE}${msg.data.url}?t=${Date.now()}`);
+        setPhotoUrl(`${msg.data.url}?t=${Date.now()}`);
         setMode((prev) => (prev === "call" ? prev : "picture"));
       }
 
