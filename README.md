@@ -48,6 +48,12 @@ docker version
 docker compose version
 ```
 
+Build the docker:
+```
+docker compose up -d --build
+docker compose logs -f
+```
+
 
 ### Other (obsolete?)
 
