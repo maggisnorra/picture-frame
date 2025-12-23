@@ -42,7 +42,12 @@ $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
 
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+sudo systemctl enable --now docker
+docker version
+docker compose version
 ```
+
 
 ### Other (obsolete?)
 
