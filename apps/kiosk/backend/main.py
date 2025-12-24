@@ -96,7 +96,7 @@ def volume_lower():
 
 @api.post("/volume/mute", status_code=202)
 def volume_mute_toggle():
-    _run(["pactl", "set-sink-mute", SOUND_SINK, "toggle"])
+    _run(["pactl", "set-sink-mute", SOUND_SINK, "toggle"]) # TODO: fix that it does not work
     vol, muted = get_volume()
     sse_send("volume", {"volume_percent": vol, "muted": muted})
     return {"ok": True, "volume_percent": vol, "muted": muted}
@@ -225,7 +225,7 @@ def call_reset():
 
 
 #
-# Reaction (maybe :)
+# Reaction
 #
 
 class ReactionIn(BaseModel):
