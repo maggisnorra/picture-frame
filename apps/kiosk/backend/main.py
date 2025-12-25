@@ -290,15 +290,14 @@ def _find_current_file() -> tuple[Path, str] | None:
 
 @api.post("/picture", status_code=201)
 async def upload_picture(file: UploadFile = File(...)):
-    info = ALLOWED.get(file.content_type)
-    if not info:
+    ext = ALLOWED.get(file.content_type)
+    if not ext:
         raise HTTPException(415, "Unsupported image type")
 
-    ext, content_type = info
     dst_name = f"current{ext}"
     dst = PICTURE_DIR / dst_name
-
     tmp = PICTURE_DIR / f".upload_{uuid.uuid4().hex}{ext}"
+    
     try:
         with tmp.open("wb") as out:
             shutil.copyfileobj(file.file, out)
@@ -310,7 +309,7 @@ async def upload_picture(file: UploadFile = File(...)):
                 if p.exists():
                     p.unlink()
 
-        meta = _write_meta(dst_name, content_type)
+        meta = _write_meta(dst_name, ext)
 
         sse_send("picture", {"url": meta["url"], "updated_at": meta["updated_at"]})
 
