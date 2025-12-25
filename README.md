@@ -127,14 +127,10 @@ uvicorn main:app --reload --port 8000
 
 ## Kiosk
 
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends \
-  xserver-xorg x11-xserver-utils xinit openbox unclutter curl
-
-
-temp: chromium --kiosk --incognito --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI http://127.0.0.1:8000/
-
-log: sudo journalctl -u wifi-connect --no-pager -n 200
+To see logs:
+```
+sudo journalctl -u <wifi-connect|kiosk-api|(some other)> --no-pager -n 200
+```
 
 Create and enable service to run on frame:
 ```
@@ -235,6 +231,20 @@ npm run build
 
 Remember to set the Chromium version.
 
+
+### Kiosk mode
+
+Install:
+```
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  xserver-xorg x11-xserver-utils xinit openbox unclutter curl
+```
+
+Start:
+```
+chromium --kiosk --incognito --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI http://127.0.0.1:8000/
+```
 
 ### WiFi Connect
 

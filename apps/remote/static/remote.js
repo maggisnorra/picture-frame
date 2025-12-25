@@ -7,6 +7,7 @@
   // ---- Identity / API ----
   /** @type {string} */
   const SELF = (document.body && document.body.dataset && document.body.dataset.self) ? document.body.dataset.self : "";
+  const OTHER = SELF === "adam" ? "steve" : "adam";
   const API = `/api/${encodeURIComponent(SELF)}`;
 
   /** @type {HTMLPreElement | null} */
@@ -138,7 +139,7 @@
     if (!frameImg) return;
 
     // Always fetch latest bytes (bust browser cache)
-    const url = `${API}/picture?t=${Date.now()}`;
+    const url = `https://frame-${OTHER}.maggisnorra.is/api/picture?t=${Date.now()}`;
     frameImg.src = url;
   }
 
