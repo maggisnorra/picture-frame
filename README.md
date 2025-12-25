@@ -240,11 +240,65 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   xserver-xorg x11-xserver-utils xinit openbox unclutter curl
 ```
+or this might be enough:
+```
+sudo apt-get update
+sudo apt-get install -y unclutter curl chromium
+```
 
-Start:
+Check if exists:
 ```
-chromium --kiosk --incognito --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI http://127.0.0.1:8000/
+command -v unclutter xset curl chromium
 ```
+
+Start one time:
+```
+chromium --kiosk --temp-profile --incognito --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI --no-first-run http://127.0.0.1:8000/
+```
+
+Set **System Options -> Boot / Auto Login -> Desktop Autologin** in:
+```
+sudo raspi-config
+```
+
+Kiosk launcher script:
+```
+mkdir -p ~/bin
+tee ~/bin/start-kiosk.sh >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG=/tmp/kiosk.log
+echo "=== kiosk start $(date) ===" >> "$LOG"
+echo "user=$(id -un) DISPLAY=${DISPLAY-} WAYLAND_DISPLAY=${WAYLAND_DISPLAY-} XDG_SESSION_TYPE=${XDG_SESSION_TYPE-}" >> "$LOG"
+
+for i in $(seq 1 240); do
+  if curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1; then
+    echo "backend ok" >> "$LOG"
+    break
+  fi
+  sleep 0.5
+done
+
+exec chromium --kiosk --temp-profile --incognito --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI --no-first-run --ozone-platform=wayland --enable-features=UseOzonePlatform http://127.0.0.1:8000/ >>"$LOG" 2>&1
+EOF
+chmod +x ~/bin/start-kiosk.sh
+```
+
+Create service:
+```
+mkdir -p ~/.config/autostart
+tee ~/.config/autostart/kiosk.desktop >/dev/null <<EOF
+[Desktop Entry]
+Type=Application
+Name=Kiosk
+Exec=$HOME/bin/start-kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+```
+
+
 
 ### WiFi Connect
 
