@@ -14,7 +14,7 @@ html, body, #root {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
-  /* cursor: none; */
+  cursor: none;
 }
 
 
@@ -45,3 +45,36 @@ html, body, #root {
   padding:10px 14px; 
   margin:0 6px; 
 }
+
+#reactionOverlay{
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 9999;
+
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+#reactionOverlay.show{
+  opacity: 1;
+  transform: scale(1);
+}
+
+#reactionOverlay .bubble{
+  max-width: min(80vw, 900px);
+  padding: 18px 26px;
+  border-radius: 28px;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(8px);
+
+  color: white;
+  font-size: clamp(64px, 8vw, 170px);
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 10px 30px rgba(0,0,0,0.55);
+}
+

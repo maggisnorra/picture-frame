@@ -258,6 +258,40 @@ sudo cp -a ui /usr/local/share/wifi-connect/ui
 /usr/local/sbin/wifi-connect --version
 ```
 
+To solve `/usr/local/share/wifi-connect/ui` getting deleted:
+```
+set -euo pipefail
+
+VER="v4.11.84"
+TMP="$(mktemp -d)"
+cd "$TMP"
+
+# download UI
+curl -fL "https://github.com/balena-os/wifi-connect/releases/download/${VER}/wifi-connect-ui.tar.gz" -o ui.tgz
+
+# extract into a known dir
+mkdir ui_extract
+tar -xzf ui.tgz -C ui_extract
+
+# locate index.html inside the extracted tree
+IDX="$(find ui_extract -type f -name index.html -print -quit || true)"
+if [ -z "$IDX" ]; then
+  echo "ERROR: index.html not found inside ui.tgz. Archive listing:"
+  tar -tzf ui.tgz | head -n 50
+  exit 1
+fi
+UI_SRC="$(dirname "$IDX")"
+echo "UI source dir: $UI_SRC"
+
+# install to expected location
+sudo rm -rf /usr/local/share/wifi-connect/ui
+sudo mkdir -p /usr/local/share/wifi-connect/ui
+sudo cp -a "$UI_SRC"/. /usr/local/share/wifi-connect/ui/
+
+# verify
+sudo test -f /usr/local/share/wifi-connect/ui/index.html
+echo "OK: UI installed"
+```
 
 Settings:
 ```

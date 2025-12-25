@@ -4,7 +4,7 @@ from typing import Literal, Optional, Dict, Any
 
 import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -48,7 +48,7 @@ def other(u: User) -> User:
 
 def _ensure_user(u: str) -> User:
     if u not in ("adam", "steve"):
-        raise HTTPException(404, "Unknown user")
+        raise HTTPException(404, f"Unknown user, got {u}")
     return u  # type: ignore
 
 
@@ -89,6 +89,10 @@ async def frame_post(u: User, path: str, *, json: Any = None, files: Any = None)
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse("static/favicon.ico")
 
 @app.get("/{self_user}", response_class=HTMLResponse)
 def controller_page(request: Request, self_user: User):
@@ -178,12 +182,11 @@ async def status(self_user: str):
     }
 
 
-# Volume controls OTHER frame
+# Volume control
 @app.post("/api/{self_user}/volume/{action}")
 async def volume(self_user: str, action: Literal["raise", "lower", "mute"]):
     me = _ensure_user(self_user)
-    them = other(me)
-    return await frame_post(them, f"/volume/{action}")
+    return await frame_post(me, f"/volume/{action}")
 
 
 # Reaction to OTHER frame
@@ -198,17 +201,19 @@ async def reaction(self_user: str, body: Dict[str, Any]):
 
 
 # Picture to OTHER frame
-@app.post("/api/{self_user}/picture")
+@app.post("/api/{self_user}/picture", status_code=201)
 async def picture(self_user: str, file: UploadFile = File(...)):
     me = _ensure_user(self_user)
     them = other(me)
 
-    content_type = file.content_type or "application/octet-stream"
     data = await file.read()
-    await file.close()
-
-    # forward file to target frame
-    files = {"file": (file.filename or "upload", data, content_type)}
+    files = {
+        "file": (
+            file.filename or "upload",
+            data,
+            file.content_type or "application/octet-stream",
+        )
+    }
     return await frame_post(them, "/picture", files=files)
 
 

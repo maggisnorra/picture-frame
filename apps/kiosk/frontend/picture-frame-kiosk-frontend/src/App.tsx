@@ -3,7 +3,7 @@ import { FrameLayout, MediaSurface } from './components/FrameLayout'
 import { VolumeToast, CallIncoming, CallOutgoing } from './components/Overlays'
 import { useKioskEvents } from "./hooks/useKioskEvents";
 import './App.css'
-import type { CallPayload/*, CallState*/ } from './types/push';
+import type { CallPayload,/*, CallState*/} from './types/push';
 
 // each state
 export type Mode = "picture" | "call" | "ended" | "instructions"
@@ -40,6 +40,35 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey)
   }, [volume])*/
 
+  let reactionHideTimer: number | null | undefined = null;
+
+  function ensureReactionOverlay() {
+    let el = document.getElementById("reactionOverlay");
+    if (el) return el;
+
+    el = document.createElement("div");
+    el.id = "reactionOverlay";
+    el.innerHTML = `<div class="bubble" id="reactionOverlayText"></div>`;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function showReaction(message: string, ms = 1600) {
+    const overlay = ensureReactionOverlay();
+    const textEl = document.getElementById("reactionOverlayText");
+    if (textEl) textEl.textContent = String(message ?? "").trim() || "❤️";
+
+    overlay.classList.remove("show");
+    void overlay.offsetHeight;
+    overlay.classList.add("show");
+
+    if (reactionHideTimer) clearTimeout(reactionHideTimer);
+    reactionHideTimer = setTimeout(() => {
+      overlay.classList.remove("show");
+    }, ms);
+  }
+
+
   const volTimer = useRef<number | null>(null);
   function flashVolume(v: number) {
     setVolume(v)
@@ -49,7 +78,26 @@ export default function App() {
     volTimer.current = window.setTimeout(() => setShowVol(false), 1200);
   }
 
+  type PictureMeta = {
+    filename: string;
+    content_type: string;
+    updated_at: number;
+    url: string;
+  }
+
   useEffect(() => {
+    fetch(`${API_BASE}/picture/meta`, { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as PictureMeta;
+      })
+      .then((v) => {
+        setPhotoUrl(`${v.url}?t=${v.updated_at}`);
+      })
+      .catch(() => {
+        setPhotoUrl("/vite.svg");
+      });
+
     fetch(`${API_BASE}/volume`)
       .then((r) => r.json() as Promise<{ volume_percent: number; muted: boolean }>)
       .then((v) => {
@@ -100,8 +148,7 @@ export default function App() {
       }
 
       if (msg.event === "reaction") {
-        // TODO: show reaction overlay
-        console.log("reaction:", msg.data.message);
+        showReaction(msg.data.message);
       }
     },
   });

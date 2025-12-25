@@ -249,25 +249,97 @@ ALLOWED = {
 
 PICTURE_DIR = Path("pics")
 PICTURE_DIR.mkdir(exist_ok=True)
+META_PATH = PICTURE_DIR / "current.json"
 
 app.mount("/pics", StaticFiles(directory=str(PICTURE_DIR)), name="pics")
 
+def _write_meta(filename: str, content_type: str) -> dict:
+    meta = {
+        "filename": filename,
+        "content_type": content_type,
+        "updated_at": int(time.time()),
+        "url": f"/pics/{filename}",
+    }
+    META_PATH.write_text(json.dumps(meta), encoding="utf-8")
+    return meta
+
+def _read_meta() -> dict | None:
+    if not META_PATH.is_file():
+        return None
+    try:
+        return json.loads(META_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+def _find_current_file() -> tuple[Path, str] | None:
+    meta = _read_meta()
+    if meta and "filename" in meta:
+        p = PICTURE_DIR / meta["filename"]
+        if p.is_file():
+            return p, meta.get("content_type") or "application/octet-stream"
+
+    candidates = []
+    for ext, ct in ALLOWED:
+        p = PICTURE_DIR / f"current{ext}"
+        if p.is_file():
+            candidates.append((p.stat().st_mtime, p, ct))
+    if not candidates:
+        return None
+    _, p, ct = max(candidates, key=lambda t: t[0])
+    return p, ct
+
 @api.post("/picture", status_code=201)
 async def upload_picture(file: UploadFile = File(...)):
-    ext = ALLOWED.get(file.content_type)
-    if not ext:
+    info = ALLOWED.get(file.content_type)
+    if not info:
         raise HTTPException(415, "Unsupported image type")
-    
-    dst = PICTURE_DIR / f"current{ext}"
-    tmp = PICTURE_DIR / f".upload_tmp{ext}"
-    with tmp.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
-    tmp.replace(dst)
-    
-    sse_send("picture", {"url": f"/pics/current{ext}"})
-    
-    await file.close()
-    return {"ok": True, "url": f"/pics/current{ext}"}
+
+    ext, content_type = info
+    dst_name = f"current{ext}"
+    dst = PICTURE_DIR / dst_name
+
+    tmp = PICTURE_DIR / f".upload_{uuid.uuid4().hex}{ext}"
+    try:
+        with tmp.open("wb") as out:
+            shutil.copyfileobj(file.file, out)
+        tmp.replace(dst)
+
+        for other_ext in (".jpg", ".png", ".webp"):
+            if other_ext != ext:
+                p = PICTURE_DIR / f"current{other_ext}"
+                if p.exists():
+                    p.unlink()
+
+        meta = _write_meta(dst_name, content_type)
+
+        sse_send("picture", {"url": meta["url"], "updated_at": meta["updated_at"]})
+
+        return {"ok": True, **meta}
+    finally:
+        await file.close()
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+@api.get("/picture/meta")
+def get_picture_meta():
+    found = _find_current_file()
+    if not found:
+        raise HTTPException(404, "No picture set")
+    path, content_type = found
+    return {
+        "filename": path.name,
+        "content_type": content_type,
+        "updated_at": int(path.stat().st_mtime),
+        "url": f"/pics/{path.name}",
+    }
+
+@api.get("/picture")
+def get_picture_file():
+    found = _find_current_file()
+    if not found:
+        raise HTTPException(404, "No picture set")
+    path, content_type = found
+    return FileResponse(path, media_type=content_type)
 
 
 app.include_router(api)
