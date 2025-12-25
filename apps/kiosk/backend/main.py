@@ -279,7 +279,7 @@ def _find_current_file() -> tuple[Path, str] | None:
             return p, meta.get("content_type") or "application/octet-stream"
 
     candidates = []
-    for ext, ct in ALLOWED:
+    for ct, ext in ALLOWED.items():
         p = PICTURE_DIR / f"current{ext}"
         if p.is_file():
             candidates.append((p.stat().st_mtime, p, ct))
