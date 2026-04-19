@@ -144,7 +144,7 @@
       log(`ERR GET picture/meta -> ${err}`);
       if (frameImg) frameImg.classList.add("d-none");
       if (frameEmptyEl) {
-        frameEmptyEl.textContent = `Ekki tókst að sækja mynd`;
+        frameEmptyEl.textContent = "Ekki tókst að sækja mynd";
         frameEmptyEl.classList.remove("d-none");
       }
       return false;
@@ -161,11 +161,11 @@
     try {
       const response = await reqJson("DELETE", `pictures/${encodeURIComponent(pictureId)}`);
       log(`DELETE pictures/${pictureId} -> ${JSON.stringify(response)}`);
-      setStatus(uploadStatusEl, "Mynd fjarlægð af ramma hjá " + OTHER_LABEL + ".", "success");
+      setStatus(uploadStatusEl, "Mynd fjarlægð", "success");
       await refreshPartnerPictures();
     } catch (err) {
       log(`ERR DELETE pictures/${pictureId} -> ${err}`);
-      setStatus(uploadStatusEl, `Ekki tókst að eyða mynd: ${err}`, "error");
+      setStatus(uploadStatusEl, `Ekki tókst að eyða mynd`, "error");
     } finally {
       if (button) {
         button.disabled = false;
@@ -189,21 +189,20 @@
   function renderPlaylist(playlist) {
     if (playlistSummaryEl) {
       playlistSummaryEl.textContent = playlist.empty
-        ? `Engar myndir hjá ${OTHER_LABEL}`
+        ? `Engar myndir`
         : pluralizePictures(playlist.images.length);
     }
 
     if (!playlistEl) return;
 
     if (playlist.empty || !Array.isArray(playlist.images) || playlist.images.length === 0) {
-      playlistEl.innerHTML = `<div class="frame-empty">Engar myndir hafa verið vistaðar hjá ${escapeHtml(OTHER_LABEL)} enn.</div>`;
+      playlistEl.innerHTML = `<div class="frame-empty">Engar myndir</div>`;
       return;
     }
 
     playlistEl.innerHTML = playlist.images
       .map((image) => {
         const isCurrent = image.picture_id === playlist.current_picture_id;
-        const badge = isCurrent ? `<span class="badge text-bg-info">Í birtingu</span>` : `<span class="badge text-bg-secondary">Í biðröð</span>`;
         const url = `${API}/pictures/${encodeURIComponent(image.picture_id)}/file?t=${image.uploaded_at || Date.now()}`;
         return `
           <div class="playlist-item">
@@ -211,7 +210,6 @@
             <div class="playlist-meta">
               <div class="playlist-name">${escapeHtml(image.filename)}</div>
               <div class="playlist-actions">
-                ${badge}
                 <button type="button" class="btn btn-sm btn-outline-danger" data-delete-picture-id="${escapeHtml(image.picture_id)}">Eyða</button>
               </div>
             </div>
@@ -240,11 +238,11 @@
       }
       if (playlistEl) {
         playlistEl.innerHTML = playlistUnsupported
-          ? `<div class="frame-empty">Ramminn hjá ${escapeHtml(OTHER_LABEL)} styður ekki myndalista enn. Uppfærðu kiosk-forritið á rammanum til að sjá allar myndir og eyða þeim hér.</div>`
-          : `<div class="frame-empty">Ekki tókst að sækja myndalista hjá ${escapeHtml(OTHER_LABEL)}.</div>`;
+          ? `<div class="frame-empty">Error 67</div>`
+          : `<div class="frame-empty">Ekki tókst að sækja myndir</div>`;
       }
       if (!hasCurrentPicture && frameEmptyEl) {
-        frameEmptyEl.textContent = `Ekki tókst að sækja núverandi mynd hjá ${OTHER_LABEL}.`;
+        frameEmptyEl.textContent = "Ekki tókst að sækja mynd";
       }
     }
   }
@@ -259,7 +257,7 @@
       log(`GET slideshow -> ${JSON.stringify(response)}`);
     } catch (err) {
       log(`ERR GET slideshow -> ${err}`);
-      setStatus(intervalStatusEl, `Ekki tókst að sækja skiptitíma: ${err}`, "error");
+      setStatus(intervalStatusEl, "Ekki tókst að sækja skiptitíma", "error");
     }
   }
 
@@ -295,7 +293,7 @@
 
       const file = fileInput.files && fileInput.files.length > 0 ? fileInput.files[0] : null;
       if (!file) {
-        setStatus(uploadStatusEl, "Veldu mynd áður en þú sendir hana.", "error");
+        setStatus(uploadStatusEl, "Veldu mynd", "error");
         log("ERR POST picture -> no file selected");
         return;
       }
@@ -310,13 +308,13 @@
         if (!response.ok) throw new Error(`${response.status} ${text}`);
         const json = text ? JSON.parse(text) : {};
         log(`POST picture -> ${JSON.stringify(json)}`);
-        setStatus(uploadStatusEl, `Mynd send til ${OTHER_LABEL}.`, "success");
+        setStatus(uploadStatusEl, "Mynd send", "success");
         fileInput.value = "";
         showSelectionPreview(null);
         await refreshPartnerPictures();
       } catch (err) {
         log(`ERR POST picture -> ${err}`);
-        setStatus(uploadStatusEl, `Ekki tókst að senda mynd: ${err}`, "error");
+        setStatus(uploadStatusEl, "Ekki tókst að senda mynd", "error");
       } finally {
         setBtnEnabled(uploadBtn, !!(fileInput.files && fileInput.files.length > 0));
       }
@@ -341,10 +339,10 @@
         const response = await reqJson("PUT", "slideshow", { interval_seconds: intervalSeconds });
         log(`PUT slideshow -> ${JSON.stringify(response)}`);
         if (intervalCurrentValueEl) intervalCurrentValueEl.textContent = formatInterval(intervalSeconds);
-        setStatus(intervalStatusEl, "Skiptitími vistaður á þínum ramma.", "success");
+        setStatus(intervalStatusEl, "Skiptitími vistaður", "success");
       } catch (err) {
         log(`ERR PUT slideshow -> ${err}`);
-        setStatus(intervalStatusEl, `Ekki tókst að vista skiptitíma: ${err}`, "error");
+        setStatus(intervalStatusEl, "Ekki tókst að vista skiptitíma", "error");
       } finally {
         intervalSaveBtn.disabled = wasDisabled;
       }
