@@ -3,9 +3,18 @@ export type VolumeMsg = {
   data: { volume_percent: number; muted: boolean };
 }
 
+export type PictureSnapshot = {
+  empty: boolean;
+  picture_id: string | null;
+  filename: string | null;
+  content_type: string | null;
+  updated_at: number;
+  url: string | null;
+}
+
 export type PictureMsg = {
   event: "picture";
-  data: { url: string };
+  data: PictureSnapshot;
 }
 
 export type CallState =

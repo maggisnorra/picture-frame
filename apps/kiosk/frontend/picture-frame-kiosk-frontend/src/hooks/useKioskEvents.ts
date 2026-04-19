@@ -22,7 +22,7 @@ export function useKioskEvents({ apiBase = "", onMessage }: Opts) {
       es.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data) as PushMsg;
-          onMessage(msg);
+          onMessageRef.current(msg);
         } catch {
           // ignore bad JSON
         }
@@ -50,5 +50,5 @@ export function useKioskEvents({ apiBase = "", onMessage }: Opts) {
       es?.close();
       es = null;
     };
-  }, [apiBase, onMessage]);
+  }, [apiBase]);
 }

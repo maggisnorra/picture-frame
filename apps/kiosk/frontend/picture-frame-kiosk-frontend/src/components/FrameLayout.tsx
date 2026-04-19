@@ -10,7 +10,15 @@ export function FrameLayout({ media, children }: { media: React.ReactNode; child
   )
 }
 
-export function MediaSurface({ mode, photoUrl }: { mode: Mode; photoUrl?: string }) {
+export function MediaSurface({
+  mode,
+  photoUrl,
+  pictureEmpty,
+}: {
+  mode: Mode;
+  photoUrl?: string | null;
+  pictureEmpty: boolean;
+}) {
   const remoteRef = useRef<HTMLVideoElement>(null)
   const localRef  = useRef<HTMLVideoElement>(null)
 
@@ -24,8 +32,16 @@ export function MediaSurface({ mode, photoUrl }: { mode: Mode; photoUrl?: string
 
   return (
     <>
-      {mode === "picture" && (
+      {mode === "picture" && photoUrl && (
         <img src={photoUrl} alt="" style={{ position: "absolute", inset: 0, width:"100%", height:"100%", objectFit:"cover" }} />
+      )}
+      {mode === "picture" && pictureEmpty && (
+        <div className="empty-picture-state">
+          <div className="empty-picture-frame">
+            <div className="empty-picture-label">No photos yet</div>
+            <div className="empty-picture-subtitle">Add one from the remote controller.</div>
+          </div>
+        </div>
       )}
 
       {mode === "call" && (

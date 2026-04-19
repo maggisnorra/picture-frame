@@ -1,0 +1,28 @@
+{
+  "images": [
+    {
+      "picture_id": "9cf47d1810cb417eb3b4a593ccee064d",
+      "filename": "9cf47d1810cb417eb3b4a593ccee064d.jpg",
+      "original_filename": "Picture 2.jpg",
+      "content_type": "image/jpeg",
+      "uploaded_at": 1776589316
+    },
+    {
+      "picture_id": "596fe9dd81c1451b9a51fc6955e23a51",
+      "filename": "596fe9dd81c1451b9a51fc6955e23a51.jpg",
+      "original_filename": "Picture 3.jpg",
+      "content_type": "image/jpeg",
+      "uploaded_at": 1776589321
+    },
+    {
+      "picture_id": "decad8660f3c48fabf3b27cf90c1049a",
+      "filename": "decad8660f3c48fabf3b27cf90c1049a.jpg",
+      "original_filename": "278288574_4962042363872781_5166743154486961362_n.jpg",
+      "content_type": "image/jpeg",
+      "uploaded_at": 1776589418
+    }
+  ],
+  "current_picture_id": "decad8660f3c48fabf3b27cf90c1049a",
+  "interval_seconds": 5,
+  "last_switch_at": 1776590555.89713
+}

@@ -3,7 +3,7 @@ import { FrameLayout, MediaSurface } from './components/FrameLayout'
 import { VolumeToast, CallIncoming, CallOutgoing } from './components/Overlays'
 import { useKioskEvents } from "./hooks/useKioskEvents";
 import './App.css'
-import type { CallPayload,/*, CallState*/} from './types/push';
+import type { CallPayload, PictureSnapshot } from './types/push';
 
 // each state
 export type Mode = "picture" | "call" | "ended" | "instructions"
@@ -17,7 +17,8 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("picture")
   const [callMode, setCallMode] = useState<CallMode>(null)
 
-  const [photoUrl, setPhotoUrl] = useState<string>("/vite.svg")
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [pictureEmpty, setPictureEmpty] = useState(true)
   const [volume, setVolume] = useState<number>(40)
   const [showVol, setShowVol] = useState(false)
 
@@ -40,7 +41,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey)
   }, [volume])*/
 
-  let reactionHideTimer: number | null | undefined = null;
+  const reactionHideTimer = useRef<number | null>(null);
 
   function ensureReactionOverlay() {
     let el = document.getElementById("reactionOverlay");
@@ -62,8 +63,8 @@ export default function App() {
     void overlay.offsetHeight;
     overlay.classList.add("show");
 
-    if (reactionHideTimer) clearTimeout(reactionHideTimer);
-    reactionHideTimer = setTimeout(() => {
+    if (reactionHideTimer.current) clearTimeout(reactionHideTimer.current);
+    reactionHideTimer.current = window.setTimeout(() => {
       overlay.classList.remove("show");
     }, ms);
   }
@@ -78,24 +79,27 @@ export default function App() {
     volTimer.current = window.setTimeout(() => setShowVol(false), 1200);
   }
 
-  type PictureMeta = {
-    filename: string;
-    content_type: string;
-    updated_at: number;
-    url: string;
+  function applyPictureSnapshot(snapshot: PictureSnapshot) {
+    if (snapshot.empty || !snapshot.url) {
+      setPictureEmpty(true);
+      setPhotoUrl(null);
+      return;
+    }
+
+    setPictureEmpty(false);
+    setPhotoUrl(`${snapshot.url}?t=${snapshot.updated_at}`);
   }
 
   useEffect(() => {
     fetch(`${API_BASE}/picture/meta`, { cache: "no-store" })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return (await r.json()) as PictureMeta;
+        return (await r.json()) as PictureSnapshot;
       })
-      .then((v) => {
-        setPhotoUrl(`${v.url}?t=${v.updated_at}`);
-      })
+      .then((v) => applyPictureSnapshot(v))
       .catch(() => {
-        setPhotoUrl("/vite.svg");
+        setPictureEmpty(true);
+        setPhotoUrl(null);
       });
 
     fetch(`${API_BASE}/volume`)
@@ -137,8 +141,7 @@ export default function App() {
       }
 
       if (msg.event === "picture") {
-        // cache-bust so the <img> reloads even if URL is the same
-        setPhotoUrl(`${msg.data.url}?t=${Date.now()}`);
+        applyPictureSnapshot(msg.data);
         setMode((prev) => (prev === "call" ? prev : "picture"));
       }
 
@@ -162,7 +165,7 @@ export default function App() {
   // })
 
   return (
-    <FrameLayout media={<MediaSurface mode={mode} photoUrl={photoUrl} />}>
+    <FrameLayout media={<MediaSurface mode={mode} photoUrl={photoUrl} pictureEmpty={pictureEmpty} />}>
       {showVol && <VolumeToast value={volume} />}
       {callMode === "callee" && (
         <CallIncoming />

@@ -5,32 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fjarstýring</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/cyborg/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/remote.css">
   <link rel="icon" href="/static/favicon.ico">
-  <style>
-    .preview16x10{
-      aspect-ratio: 16 / 10;
-      width: 100%;
-      overflow: hidden;
-    }
-
-    .preview16x10 > img{
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-  </style>
 </head>
-<body data-self="{{ self_user }}">
+<body data-self="{{ self_user }}" data-other="{{ other_user }}">
   <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h1 class="h4 mb-1">Fjarstýring</h1>
+        <p class="text-body-secondary mb-0">Þú ert að stýra {{ other_user|capitalize }} en skiptir myndum á {{ self_user|capitalize }} hér fyrir neðan.</p>
       </div>
     </div>
 
     <div class="row g-4">
-      <div class="col-12 col-md-6 col-lg-3 col-xxl-4 d-flex align-items-stretch">
+      <div class="col-12 col-md-6 col-lg-3 d-flex align-items-stretch">
         <div class="card flex-fill">
           <div class="card-header">Hljóð</div>
           <div class="card-body d-flex flex-wrap gap-2 align-content-start w-100">
@@ -42,7 +30,7 @@
         </div>
       </div>
 
-      <div class="col-12 col-md-6 col-lg-3 col-xxl-4 d-flex align-items-stretch">
+      <div class="col-12 col-md-6 col-lg-3 d-flex align-items-stretch">
         <div class="card flex-fill">
           <div class="card-header">Myndsímtal</div>
           <div class="card-body d-flex flex-wrap gap-2 align-content-start w-100">
@@ -55,17 +43,17 @@
         </div>
       </div>
 
-      <div class="col-12 col-md-12 col-lg-6 col-xxl-4 d-flex align-items-stretch">
+      <div class="col-12 col-lg-6 d-flex align-items-stretch">
         <div class="card flex-fill">
           <div class="card-header">Skilaboð</div>
           <div class="card-body d-flex flex-column gap-2 align-content-start">
             <div class="d-flex justify-content-center flex-wrap gap-2">
-              <button class="btn btn-outline" data-reaction="❤️">❤️</button>
-              <button class="btn btn-outline" data-reaction="😂">😂</button>
-              <button class="btn btn-outline" data-reaction="😈">😈</button>
-              <button class="btn btn-outline" data-reaction="🥳">🥳</button>
-              <button class="btn btn-outline" data-reaction="😳">😳</button>
-              <button class="btn btn-outline" data-reaction="😭">😭</button>
+              <button class="btn btn-outline-light" data-reaction="❤️">❤️</button>
+              <button class="btn btn-outline-light" data-reaction="😂">😂</button>
+              <button class="btn btn-outline-light" data-reaction="😈">😈</button>
+              <button class="btn btn-outline-light" data-reaction="🥳">🥳</button>
+              <button class="btn btn-outline-light" data-reaction="😳">😳</button>
+              <button class="btn btn-outline-light" data-reaction="😭">😭</button>
             </div>
             <div class="d-flex justify-content-center flex-wrap gap-2">
               <input id="reactionInput" class="form-control w-auto" placeholder="Skrifa skilaboð..." />
@@ -74,27 +62,61 @@
           </div>
         </div>
       </div>
-      <div class="col-12 col-lg-5 col-xxl-3 d-flex align-items-stretch">
+
+      <div class="col-12 col-xl-7 d-flex align-items-stretch">
         <div class="card flex-fill">
-          <div class="card-header">Uppfæra mynd</div>
-          <div class="card-body">
+          <div class="card-header">Myndir hjá {{ other_user|capitalize }}</div>
+          <div class="card-body d-flex flex-column gap-3">
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <input class="form-control" type="file" id="pictureFile" accept="image/*" style="max-width: 420px;">
               <button type="button" class="btn btn-info" id="pictureUploadBtn">Senda mynd</button>
               <button type="button" class="btn btn-outline-secondary" id="pictureClearBtn">Hreinsa</button>
             </div>
 
-            <div class="mt-3">
-              <img id="picturePreview" class="img-fluid rounded border preview16x10">
+            <div id="pictureUploadStatus" class="status-text"></div>
+
+            <div class="preview-shell">
+              <img id="picturePreview" class="img-fluid rounded border preview16x10 d-none" alt="Valin mynd">
+              <div id="picturePreviewEmpty" class="frame-empty preview16x10">Veldu mynd til að forskoða áður en þú sendir hana.</div>
             </div>
+
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h2 class="h6 mb-0">Vistaðar myndir</h2>
+                <p class="text-body-secondary small mb-0">Nýjar myndir bætast aftast í röðina.</p>
+              </div>
+              <span class="text-body-secondary small" id="playlistSummary">Hleð...</span>
+            </div>
+
+            <div id="partnerPlaylist" class="playlist-grid"></div>
           </div>
         </div>
       </div>
-      <div class="col-12 col-lg-7 col-xxl-9 d-flex align-items-stretch">
-        <div class="card flex-fill">
-          <div class="card-header">Núverandi mynd</div>
-          <div class="card-body">
-            <img id="frameCurrentImg" class="img-fluid rounded border preview16x10">
+
+      <div class="col-12 col-xl-5">
+        <div class="d-flex flex-column gap-4 h-100">
+          <div class="card flex-fill">
+            <div class="card-header">Núverandi mynd hjá {{ other_user|capitalize }}</div>
+            <div class="card-body">
+              <img id="frameCurrentImg" class="img-fluid rounded border preview16x10 d-none" alt="Núverandi mynd á ramma">
+              <div id="frameCurrentEmpty" class="frame-empty preview16x10">Engin mynd birtist á þessum ramma núna.</div>
+            </div>
+          </div>
+
+          <div class="card flex-fill">
+            <div class="card-header">Skiptitími hjá {{ self_user|capitalize }}</div>
+            <div class="card-body d-flex flex-column gap-3">
+              <p class="text-body-secondary small mb-0">Stilltu hversu lengi hver mynd er sýnd á þínum eigin ramma áður en sú næsta tekur við.</p>
+
+              <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input id="slideshowIntervalInput" class="form-control interval-input" type="number" min="5" max="3600" step="1">
+                <span class="text-body-secondary small">sekúndur</span>
+                <button id="slideshowSaveBtn" class="btn btn-info">Vista tíma</button>
+              </div>
+
+              <div class="text-body-secondary small">Núverandi gildi: <span id="slideshowCurrentValue">-</span></div>
+              <div id="slideshowStatus" class="status-text"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -103,7 +125,6 @@
     <pre class="mt-3 p-3 border rounded bg-dark text-light" id="log">ready</pre>
   </div>
 
-  <script>window.__SELF__ = "{{ self_user }}";</script>
   <script src="/static/remote.js" defer></script>
 </body>
 </html>
