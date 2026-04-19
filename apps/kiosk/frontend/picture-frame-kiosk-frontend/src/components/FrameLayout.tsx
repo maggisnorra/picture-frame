@@ -37,10 +37,7 @@ export function MediaSurface({
       )}
       {mode === "picture" && pictureEmpty && (
         <div className="empty-picture-state">
-          <div className="empty-picture-frame">
-            <div className="empty-picture-label">No photos yet</div>
-            <div className="empty-picture-subtitle">Add one from the remote controller.</div>
-          </div>
+          <div className="empty-picture-label">Engar myndir</div>
         </div>
       )}
 
