@@ -13,7 +13,6 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h1 class="h4 mb-1">Fjarstýring</h1>
-        <p class="text-body-secondary mb-0">Þú ert að stýra {{ other_user|capitalize }} en skiptir myndum á {{ self_user|capitalize }} hér fyrir neðan.</p>
       </div>
     </div>
 
@@ -65,7 +64,7 @@
 
       <div class="col-12 col-xl-7 d-flex align-items-stretch">
         <div class="card flex-fill">
-          <div class="card-header">Myndir hjá {{ other_user|capitalize }}</div>
+          <div class="card-header">Myndir</div>
           <div class="card-body d-flex flex-column gap-3">
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <input class="form-control" type="file" id="pictureFile" accept="image/*" style="max-width: 420px;">
@@ -77,7 +76,7 @@
 
             <div class="preview-shell">
               <img id="picturePreview" class="img-fluid rounded border preview16x10 d-none" alt="Valin mynd">
-              <div id="picturePreviewEmpty" class="frame-empty preview16x10">Veldu mynd til að forskoða áður en þú sendir hana.</div>
+              <div id="picturePreviewEmpty" class="frame-empty preview16x10">Veldu mynd</div>
             </div>
 
             <div class="d-flex justify-content-between align-items-center">
@@ -96,18 +95,16 @@
       <div class="col-12 col-xl-5">
         <div class="d-flex flex-column gap-4 h-100">
           <div class="card flex-fill">
-            <div class="card-header">Núverandi mynd hjá {{ other_user|capitalize }}</div>
+            <div class="card-header">Núverandi mynd</div>
             <div class="card-body">
               <img id="frameCurrentImg" class="img-fluid rounded border preview16x10 d-none" alt="Núverandi mynd á ramma">
-              <div id="frameCurrentEmpty" class="frame-empty preview16x10">Engin mynd birtist á þessum ramma núna.</div>
+              <div id="frameCurrentEmpty" class="frame-empty preview16x10">Engin mynd</div>
             </div>
           </div>
 
           <div class="card flex-fill">
-            <div class="card-header">Skiptitími hjá {{ self_user|capitalize }}</div>
+            <div class="card-header">Skiptitími á eigin ramma</div>
             <div class="card-body d-flex flex-column gap-3">
-              <p class="text-body-secondary small mb-0">Stilltu hversu lengi hver mynd er sýnd á þínum eigin ramma áður en sú næsta tekur við.</p>
-
               <div class="d-flex flex-wrap gap-2 align-items-center">
                 <input id="slideshowIntervalInput" class="form-control interval-input" type="number" min="5" max="3600" step="1">
                 <span class="text-body-secondary small">sekúndur</span>

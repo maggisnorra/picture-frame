@@ -6,10 +6,10 @@ Web controlled Full HD digital picture frame with video call functionality.
 **Adam** is `maggis-frame-1` and **Steve** is `maggis-frame-2`.
 
 Frame URLs:
-- adam-frame.maggisnorra.is (React)
-- adam-frame.maggisnorra.is/api (FastAPI)
-- steve-frame.maggisnorra.is (React)
-- steve-frame.maggisnorra.is/api (FastAPI)
+- frame-adam.maggisnorra.is (React)
+- frame-adam.maggisnorra.is/api (FastAPI)
+- frame-steve.maggisnorra.is (React)
+- frame-steve.maggisnorra.is/api (FastAPI)
 
 Cloud URLs:
 - frame.maggisnorra.is/adam (React remote controller)

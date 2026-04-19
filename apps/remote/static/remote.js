@@ -120,24 +120,35 @@
     showSelectionPreview(file);
   }
 
-  function renderCurrentPicture(playlist) {
+  function renderCurrentPictureMeta(meta) {
     if (!frameImg || !frameEmptyEl) return;
-
-    const current = Array.isArray(playlist.images)
-      ? playlist.images.find((image) => image.picture_id === playlist.current_picture_id)
-      : null;
-
-    if (!current) {
-      frameEmptyEl.textContent = "Engin mynd birtist á þessum ramma núna.";
+    if (!meta || meta.empty || !meta.url) {
+      frameEmptyEl.textContent = "Engin mynd";
       frameImg.removeAttribute("src");
       frameImg.classList.add("d-none");
       frameEmptyEl.classList.remove("d-none");
       return;
     }
 
-    frameImg.src = `${API}/pictures/${encodeURIComponent(current.picture_id)}/file?t=${Date.now()}`;
+    frameImg.src = `${API}/picture?t=${meta.updated_at || Date.now()}`;
     frameImg.classList.remove("d-none");
     frameEmptyEl.classList.add("d-none");
+  }
+
+  async function refreshCurrentPicture() {
+    try {
+      const meta = await reqJson("GET", "picture/meta");
+      renderCurrentPictureMeta(meta);
+      return true;
+    } catch (err) {
+      log(`ERR GET picture/meta -> ${err}`);
+      if (frameImg) frameImg.classList.add("d-none");
+      if (frameEmptyEl) {
+        frameEmptyEl.textContent = `Ekki tókst að sækja mynd`;
+        frameEmptyEl.classList.remove("d-none");
+      }
+      return false;
+    }
   }
 
   async function deletePicture(pictureId, button) {
@@ -182,8 +193,6 @@
         : pluralizePictures(playlist.images.length);
     }
 
-    renderCurrentPicture(playlist);
-
     if (!playlistEl) return;
 
     if (playlist.empty || !Array.isArray(playlist.images) || playlist.images.length === 0) {
@@ -220,16 +229,22 @@
       const playlist = await reqJson("GET", "pictures");
       if (refreshToken !== playlistRefreshToken) return;
       renderPlaylist(playlist);
+      await refreshCurrentPicture();
     } catch (err) {
       log(`ERR GET pictures -> ${err}`);
-      if (playlistSummaryEl) playlistSummaryEl.textContent = "Villa";
-      if (playlistEl) {
-        playlistEl.innerHTML = `<div class="frame-empty">Ekki tókst að sækja myndalista hjá ${escapeHtml(OTHER_LABEL)}.</div>`;
+      const hasCurrentPicture = await refreshCurrentPicture();
+      const playlistUnsupported = String(err).includes("404");
+
+      if (playlistSummaryEl) {
+        playlistSummaryEl.textContent = playlistUnsupported ? "Eldri útgáfa" : "Villa";
       }
-      if (frameImg) frameImg.classList.add("d-none");
-      if (frameEmptyEl) {
+      if (playlistEl) {
+        playlistEl.innerHTML = playlistUnsupported
+          ? `<div class="frame-empty">Ramminn hjá ${escapeHtml(OTHER_LABEL)} styður ekki myndalista enn. Uppfærðu kiosk-forritið á rammanum til að sjá allar myndir og eyða þeim hér.</div>`
+          : `<div class="frame-empty">Ekki tókst að sækja myndalista hjá ${escapeHtml(OTHER_LABEL)}.</div>`;
+      }
+      if (!hasCurrentPicture && frameEmptyEl) {
         frameEmptyEl.textContent = `Ekki tókst að sækja núverandi mynd hjá ${OTHER_LABEL}.`;
-        frameEmptyEl.classList.remove("d-none");
       }
     }
   }

@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 User = Literal["adam", "steve"]
 BASE_DIR = Path(__file__).parent
 
-ADAM_FRAME_API = os.getenv("ADAM_FRAME_API", "https://adam-frame.maggisnorra.is/api")
-STEVE_FRAME_API = os.getenv("STEVE_FRAME_API", "https://steve-frame.maggisnorra.is/api")
+ADAM_FRAME_API = os.getenv("ADAM_FRAME_API", "https://frame-adam.maggisnorra.is/api")
+STEVE_FRAME_API = os.getenv("STEVE_FRAME_API", "https://frame-steve.maggisnorra.is/api")
 
 ADAM_CF_ID = os.getenv("ADAM_CF_ACCESS_CLIENT_ID", "")
 ADAM_CF_SECRET = os.getenv("ADAM_CF_ACCESS_CLIENT_SECRET", "")
@@ -274,6 +274,20 @@ async def picture_file(self_user: str, picture_id: str):
     me = _ensure_user(self_user)
     them = other(me)
     return await frame_file_proxy(them, f"/pictures/{picture_id}/file")
+
+
+@app.get("/api/{self_user}/picture/meta")
+async def picture_meta(self_user: str):
+    me = _ensure_user(self_user)
+    them = other(me)
+    return await frame_get(them, "/picture/meta")
+
+
+@app.get("/api/{self_user}/picture")
+async def picture_current_file(self_user: str):
+    me = _ensure_user(self_user)
+    them = other(me)
+    return await frame_file_proxy(them, "/picture")
 
 
 @app.get("/api/{self_user}/slideshow")
