@@ -17,6 +17,37 @@
     </div>
 
     <div class="row g-4">
+      <div class="col-12 col-lg-6 d-flex align-items-stretch">
+        <div class="card flex-fill">
+          <div class="card-header">Birta á eigin ramma</div>
+          <div class="card-body d-flex flex-column gap-3" id="brightnessCard" aria-busy="true">
+            <div id="brightnessStatus" class="status-text" role="status" aria-live="polite">Sæki birtustillingar...</div>
+            <div id="brightnessSimulation" class="alert alert-warning mb-0" hidden>Prófunarhamur — breytir ekki birtu skjás.</div>
+            <fieldset id="brightnessControls" disabled>
+              <label class="form-label" for="brightnessSlider">Birta: <output id="brightnessValue" for="brightnessSlider">—</output></label>
+              <input id="brightnessSlider" class="form-range" type="range" min="5" max="100" step="1" value="40">
+              <div class="small text-body-secondary mb-3">Handvirk breyting gildir fram að næstu sólarupprás eða sólsetri, að hámarki 24 klst.</div>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" class="btn btn-info" id="brightnessResume">Sjálfvirk birta</button>
+                <button type="button" class="btn btn-outline-secondary" id="brightnessDisable">Slökkva á birtustýringu</button>
+              </div>
+              <form id="brightnessSettings" class="d-flex flex-wrap gap-2 align-items-end">
+                <div>
+                  <label class="form-label" for="brightnessDay">Dagur (%)</label>
+                  <input id="brightnessDay" class="form-control interval-input" type="number" min="5" max="100" step="1" required value="80">
+                </div>
+                <div>
+                  <label class="form-label" for="brightnessNight">Nótt (%)</label>
+                  <input id="brightnessNight" class="form-control interval-input" type="number" min="5" max="100" step="1" required value="15">
+                </div>
+                <button type="submit" class="btn btn-outline-info">Vista</button>
+              </form>
+            </fieldset>
+            <div id="brightnessDetails" class="small text-body-secondary brightness-details"></div>
+            <div id="brightnessError" class="status-text" data-tone="error" role="alert"></div>
+          </div>
+        </div>
+      </div>
       <div class="col-12 col-md-6 col-lg-3 d-flex align-items-stretch">
         <div class="card flex-fill">
           <div class="card-header">Hljóð</div>
@@ -122,5 +153,6 @@
   </div>
 
   <script src="/static/remote.js" defer></script>
+  <script src="/static/brightness.js" defer></script>
 </body>
 </html>

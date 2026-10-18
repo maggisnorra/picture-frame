@@ -9,15 +9,39 @@ import subprocess
 import threading
 import time
 import uuid
+import logging
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from brightness import BrightnessController, BrightnessUpdate, controller_from_env
 
 
 app = FastAPI(title="Kiosk Backend")
 api = APIRouter(prefix="/api")
+
+_brightness: BrightnessController | None = None
+_brightness_init_error: str | None = None
+
+
+def require_brightness() -> BrightnessController:
+    if _brightness is None:
+        raise HTTPException(503, _brightness_init_error or "Brightness controller is starting")
+    return _brightness
+
+
+@api.get("/brightness")
+async def brightness_get():
+    return await require_brightness().status()
+
+
+@api.put("/brightness")
+async def brightness_put(body: BrightnessUpdate):
+    try:
+        return await require_brightness().update(body)
+    except OSError:
+        raise HTTPException(503, "Cannot persist brightness settings; inspect brightness status and service logs")
 
 
 #
@@ -566,15 +590,26 @@ async def _slideshow_worker():
 
 @app.on_event("startup")
 async def startup():
-    global _slideshow_task
+    global _slideshow_task, _brightness, _brightness_init_error
     with _playlist_lock:
         _load_playlist_state()
     _slideshow_task = asyncio.create_task(_slideshow_worker())
+    try:
+        _brightness = controller_from_env()
+        await _brightness.start()
+        _brightness_init_error = None
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Cannot start brightness controller")
+        _brightness_init_error = f"Brightness initialization failed: {exc}"
+        _brightness = None
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _slideshow_task
+    global _slideshow_task, _brightness
+    if _brightness is not None:
+        await _brightness.stop()
+        _brightness = None
     if _slideshow_task is None:
         return
     _slideshow_task.cancel()

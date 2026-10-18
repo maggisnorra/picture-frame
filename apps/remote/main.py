@@ -9,7 +9,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 User = Literal["adam", "steve"]
@@ -46,6 +46,25 @@ app = FastAPI(title="Remote Controller (UI + API)")
 
 class SlideshowIn(BaseModel):
     interval_seconds: int = Field(ge=5, le=3600)
+
+
+class BrightnessIn(BaseModel):
+    """Mirror kiosk input validation without importing its hardware dependencies."""
+
+    model_config = {"extra": "forbid"}
+    action: Literal["settings", "manual", "resume"] = "settings"
+    enabled: bool | None = None
+    day_percent: int | None = Field(default=None, strict=True, ge=5, le=100)
+    night_percent: int | None = Field(default=None, strict=True, ge=5, le=100)
+    manual_percent: int | None = Field(default=None, strict=True, ge=5, le=100)
+
+    @model_validator(mode="after")
+    def valid_action(self):
+        if (self.action == "manual") != (self.manual_percent is not None):
+            raise ValueError("manual_percent is required only for action=manual")
+        if self.action != "settings" and self.enabled is not None:
+            raise ValueError("enabled is only accepted for action=settings")
+        return self
 
 
 def other(u: User) -> User:
@@ -199,9 +218,10 @@ async def status(self_user: str):
     them_vol = safe(frame_get(them, "/volume"), "other volume")
     me_call = safe(frame_get(me, "/call/state"), "self call")
     them_call = safe(frame_get(them, "/call/state"), "other call")
+    me_brightness = safe(frame_get(me, "/brightness"), "self brightness")
 
-    me_vol_r, them_vol_r, me_call_r, them_call_r = await asyncio.gather(
-        me_vol, them_vol, me_call, them_call
+    me_vol_r, them_vol_r, me_call_r, them_call_r, me_brightness_r = await asyncio.gather(
+        me_vol, them_vol, me_call, them_call, me_brightness
     )
 
     def normalize_call(x: Any) -> dict[str, Any]:
@@ -211,6 +231,7 @@ async def status(self_user: str):
 
     return {
         "self": {
+            "brightness": me_brightness_r,
             "volume": me_vol_r,
             "call_state": normalize_call(me_call_r).get("state"),
             "call": normalize_call(me_call_r).get("call"),
@@ -227,6 +248,16 @@ async def status(self_user: str):
 async def volume(self_user: str, action: Literal["raise", "lower", "mute"]):
     me = _ensure_user(self_user)
     return await frame_post(me, f"/volume/{action}")
+
+
+@app.get("/api/{self_user}/brightness")
+async def brightness_get(self_user: str):
+    return await frame_get(_ensure_user(self_user), "/brightness")
+
+
+@app.put("/api/{self_user}/brightness")
+async def brightness_put(self_user: str, body: BrightnessIn):
+    return await frame_put(_ensure_user(self_user), "/brightness", json=body.model_dump(exclude_none=True))
 
 
 @app.post("/api/{self_user}/reaction")

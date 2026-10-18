@@ -91,6 +91,11 @@ img.preview16x10 {
   max-width: 180px;
 }
 
+.brightness-details {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 #log[hidden] {
   display: none !important;
 }

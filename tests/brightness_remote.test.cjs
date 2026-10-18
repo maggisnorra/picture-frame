@@ -1,0 +1,152 @@
+// Browser-free behavior tests for the real remote script, using a minimal DOM surface.
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+const source = fs.readFileSync(path.join(__dirname, "../apps/remote/static/brightness.js"), "utf8");
+
+function state(extra = {}) {
+  return { enabled: true, available: true, mode: "automatic", simulated: true,
+    day_percent: 80, night_percent: 15, target_percent: 80, reported_percent: 40,
+    errors: {}, ...extra };
+}
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+function setup(respond) {
+  const elements = new Map();
+  const calls = [];
+  const intervals = [];
+  function element(id) {
+    if (!elements.has(id)) elements.set(id, {
+      value: "", textContent: "", disabled: true, hidden: true, listeners: {}, attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value; },
+      addEventListener(name, handler) { this.listeners[name] = handler; },
+      fire(name) { return this.listeners[name]?.({ preventDefault() {} }); },
+    });
+    return elements.get(id);
+  }
+  vm.runInNewContext(source, {
+    document: { body: { dataset: { self: "adam" } }, getElementById: element, hidden: false },
+    window: { setInterval(callback) { intervals.push(callback); } },
+    fetch: async (url, init) => {
+      calls.push({ url, ...init, body: init.body ? JSON.parse(init.body) : null });
+      return respond ? respond(calls.at(-1), calls.length) : { ok: true, json: async () => state() };
+    },
+  });
+  return { element, calls, poll: () => intervals[0]() };
+}
+
+test("renders simulation, target/readback, own-frame URL and location", async () => {
+  const ui = setup(async () => ({ ok: true, json: async () => state({
+    override: { percent: 35, expires_at: "2026-10-16T17:00:00Z" }, mode: "override",
+    location: { latitude: 52.37, longitude: 4.90, timezone: "Europe/Amsterdam" }, location_source: "ip_cache",
+  }) }));
+  await flush();
+  assert.equal(ui.calls[0].url, "/api/adam/brightness");
+  assert.equal(ui.element("brightnessSimulation").hidden, false);
+  assert.equal(ui.element("brightnessSlider").value, "35");
+  assert.match(ui.element("brightnessDetails").textContent, /40.0%/);
+  assert.match(ui.element("brightnessDetails").textContent, /IP-áætlun/);
+});
+
+test("unavailable hardware disables slider but leaves settings and recovery usable", async () => {
+  const ui = setup(async () => ({ ok: true, json: async () => state({
+    available: false, reported_percent: null, errors: { hardware: "No Linux backlight found" },
+  }) }));
+  await flush();
+  assert.equal(ui.element("brightnessSlider").disabled, true);
+  assert.equal(ui.element("brightnessControls").disabled, false);
+  assert.match(ui.element("brightnessError").textContent, /No Linux backlight/);
+});
+
+test("slider mutations serialize and newest queued value wins", async () => {
+  let finish;
+  const ui = setup(async (call) => {
+    if (call.method === "PUT" && !finish) await new Promise((resolve) => { finish = resolve; });
+    return { ok: true, json: async () => state({ target_percent: call.body?.manual_percent ?? 80 }) };
+  });
+  await flush();
+  const slider = ui.element("brightnessSlider");
+  for (const percent of [30, 35, 45]) {
+    slider.value = String(percent);
+    slider.fire("input");
+    slider.fire("change");
+  }
+  assert.equal(ui.calls.length, 2); // Initial GET and the first PUT.
+  finish();
+  await flush();
+  const puts = ui.calls.filter((call) => call.method === "PUT");
+  assert.deepEqual(puts.map((call) => call.body.manual_percent), [30, 45]);
+  assert.equal(slider.value, "45");
+});
+
+test("settings and disable/resume actions are never discarded by queued slider changes", async () => {
+  let finish;
+  const ui = setup(async (call) => {
+    if (call.method === "PUT" && !finish) await new Promise((resolve) => { finish = resolve; });
+    return { ok: true, json: async () => state() };
+  });
+  await flush();
+  ui.element("brightnessSlider").value = "30";
+  ui.element("brightnessSlider").fire("change");
+  ui.element("brightnessDay").value = "70";
+  ui.element("brightnessNight").value = "10";
+  ui.element("brightnessSettings").fire("submit");
+  ui.element("brightnessResume").fire("click");
+  ui.element("brightnessDisable").fire("click");
+  ui.element("brightnessSlider").value = "50";
+  ui.element("brightnessSlider").fire("change");
+  finish();
+  await flush();
+  assert.deepEqual(ui.calls.filter((call) => call.method === "PUT").map((call) => call.body), [
+    { action: "manual", manual_percent: 30 },
+    { action: "settings", day_percent: 70, night_percent: 10 },
+    { action: "resume" }, { action: "settings", enabled: false }, { action: "manual", manual_percent: 50 },
+  ]);
+});
+
+test("stale polling cannot overwrite a newer command response", async () => {
+  let finish;
+  const ui = setup(async (call, number) => {
+    if (number === 2) await new Promise((resolve) => { finish = resolve; });
+    return { ok: true, json: async () => state({ target_percent: call.method === "PUT" ? 25 : 80 }) };
+  });
+  await flush();
+  ui.poll();
+  ui.element("brightnessSlider").value = "25";
+  ui.element("brightnessSlider").fire("change");
+  await flush();
+  finish();
+  await flush();
+  assert.equal(ui.element("brightnessSlider").value, "25");
+});
+
+test("polling preserves unfinished settings and shows offline errors", async () => {
+  let offline = false;
+  const ui = setup(async () => {
+    if (offline) throw new Error("offline");
+    return { ok: true, json: async () => state() };
+  });
+  await flush();
+  ui.element("brightnessDay").value = "65";
+  ui.element("brightnessDay").fire("input");
+  ui.poll();
+  await flush();
+  assert.equal(ui.element("brightnessDay").value, "65");
+  offline = true;
+  ui.poll();
+  await flush();
+  assert.match(ui.element("brightnessError").textContent, /offline/);
+  assert.equal(ui.element("brightnessControls").disabled, true);
+});
+
+test("rejects invalid settings without sending commands", async () => {
+  const ui = setup();
+  await flush();
+  ui.element("brightnessDay").value = "101";
+  await ui.element("brightnessSettings").fire("submit");
+  assert.equal(ui.calls.length, 1);
+  assert.match(ui.element("brightnessError").textContent, /5 til 100/);
+});
