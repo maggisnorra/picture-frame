@@ -12,7 +12,7 @@ import uuid
 import logging
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from brightness import BrightnessController, BrightnessUpdate, controller_from_env
@@ -63,10 +63,13 @@ def sse_send(event: str, data: Any = None):
 @api.get("/events")
 async def events():
     q: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
+    initial_brightness = _brightness.display_snapshot(initial=True) if _brightness else None
     _subs.append(q)
 
     async def gen():
         try:
+            if initial_brightness is not None:
+                yield f"data: {json.dumps({'event': 'brightness', 'data': initial_brightness})}\n\n"
             while True:
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=20.0)
@@ -595,7 +598,7 @@ async def startup():
         _load_playlist_state()
     _slideshow_task = asyncio.create_task(_slideshow_worker())
     try:
-        _brightness = controller_from_env()
+        _brightness = controller_from_env(on_change=lambda snapshot: sse_send("brightness", snapshot))
         await _brightness.start()
         _brightness_init_error = None
     except Exception as exc:
@@ -775,23 +778,32 @@ app.include_router(api)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+
+def kiosk_index():
+    # Seed the first React render, including after a Chromium restart with a fresh profile.
+    # Only numeric display settings are embedded; never location data or arbitrary strings.
+    snapshot = _brightness.display_snapshot(initial=True) if _brightness else {"level_percent": 100, "transition_seconds": 0}
+    seed = '<script type="application/json" id="brightness-bootstrap">' + json.dumps(snapshot) + '</script>'
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace("</head>", seed + "</head>", 1), headers={"Cache-Control": "no-store"})
+
 if STATIC_DIR.exists():
 
     @app.get("/")
-    def spa_root():
-        return FileResponse(STATIC_DIR / "index.html")
+    async def spa_root():
+        return kiosk_index()
 
 
     @app.get("/{path:path}")
-    def spa_fallback(path: str):
+    async def spa_fallback(path: str):
         if path.startswith("api/"):
             raise HTTPException(status_code=404)
 
         candidate = STATIC_DIR / path
-        if candidate.is_file():
+        if candidate.is_file() and path != "index.html":
             return FileResponse(candidate)
 
-        return FileResponse(STATIC_DIR / "index.html")
+        return kiosk_index()
 
 else:
 

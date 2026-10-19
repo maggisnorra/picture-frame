@@ -45,4 +45,9 @@ export type ReactionMsg = {
   data: { message: string };
 }
 
-export type PushMsg = VolumeMsg | PictureMsg | CallMsg | ReactionMsg
+export type BrightnessMsg = {
+  event: "brightness";
+  data: import('../hooks/useBrightness').BrightnessSnapshot;
+}
+
+export type PushMsg = VolumeMsg | PictureMsg | CallMsg | ReactionMsg | BrightnessMsg

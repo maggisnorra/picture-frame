@@ -1,16 +1,14 @@
-"""Local brightness policy. No camera capture or display writes occur on import."""
+"""Persisted software dimming policy; the kiosk browser renders the overlay."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import os
 import tempfile
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Callable, Literal, Protocol
+from typing import Annotated, Callable, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -49,6 +47,7 @@ class Override(BaseModel):
 
 class BrightnessState(BaseModel):
     enabled: bool = True
+    level_percent: Percent = 100
     day_percent: Percent = 80
     night_percent: Percent = 15
     override: Override | None = None
@@ -70,89 +69,6 @@ class BrightnessUpdate(BaseModel):
         if self.action != "settings" and self.enabled is not None:
             raise ValueError("enabled is only accepted for action=settings")
         return self
-
-
-class DriverError(RuntimeError):
-    pass
-
-
-class Reading(BaseModel):
-    percent: float
-    requested_percent: float
-    source: str
-    device: str
-    simulated: bool = False
-
-
-class BrightnessDriver(Protocol):
-    name: str
-
-    def read(self) -> Reading: ...
-    def write(self, percent: float) -> None: ...
-
-
-class LinuxBacklight:
-    name = "linux-backlight"
-
-    def __init__(self, device: Path | None = None, root: Path = Path("/sys/class/backlight")):
-        self.device = device
-        self.root = root
-
-    def _resolve(self) -> tuple[Path, int]:
-        try:
-            if self.device:
-                devices = [self.device]
-            else:
-                devices = sorted(self.root.iterdir()) if self.root.is_dir() else []
-            if not devices:
-                raise DriverError("No Linux backlight found; run brightness_diagnostics.py")
-            if len(devices) != 1:
-                raise DriverError("Multiple backlights found; set BRIGHTNESS_DEVICE to one device directory")
-            device = devices[0]
-            maximum = int((device / "max_brightness").read_text().strip())
-            if maximum <= 0:
-                raise ValueError("max_brightness must be positive")
-            return device, maximum
-        except (OSError, ValueError) as exc:
-            raise DriverError(f"Cannot inspect backlight: {exc}") from exc
-
-    def read(self) -> Reading:
-        device, maximum = self._resolve()
-        try:
-            requested = int((device / "brightness").read_text().strip())
-            source = "actual_brightness" if (device / "actual_brightness").exists() else "brightness"
-            actual = int((device / source).read_text().strip())
-            if not 0 <= requested <= maximum or not 0 <= actual <= maximum:
-                raise ValueError("backlight reading outside native range")
-            return Reading(percent=100 * actual / maximum, requested_percent=100 * requested / maximum,
-                           source=source, device=str(device))
-        except (OSError, ValueError) as exc:
-            raise DriverError(f"Cannot read backlight {device}: {exc}") from exc
-
-    def write(self, percent: float) -> None:
-        device, maximum = self._resolve()
-        # Keep at least one native step lit, even on low-resolution devices.
-        value = max(1, min(maximum, round(max(5, min(100, percent)) * maximum / 100)))
-        try:
-            # O_TRUNC matches shell redirection on sysfs, but omit O_CREAT.
-            with os.fdopen(os.open(device / "brightness", os.O_WRONLY | os.O_TRUNC), "w") as output:
-                output.write(str(value) + "\n")
-        except OSError as exc:
-            raise DriverError(f"Cannot write backlight {device}: {exc}") from exc
-
-
-class SimulatedBacklight:
-    name = "simulated"
-
-    def __init__(self, percent: float = 40):
-        self.percent = percent
-
-    def read(self) -> Reading:
-        return Reading(percent=self.percent, requested_percent=self.percent, source="simulation",
-                       device="memory", simulated=True)
-
-    def write(self, percent: float) -> None:
-        self.percent = max(5, min(100, percent))
 
 
 def solar_state(location: Location, now: datetime) -> tuple[bool, datetime | None]:
@@ -185,29 +101,20 @@ async def lookup_location() -> Location:
 
 
 class BrightnessController:
-    def __init__(self, driver: BrightnessDriver, state_path: Path, *,
+    def __init__(self, state_path: Path, *,
                  location_override: Location | None = None, location_fallback: Location | None = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-                 monotonic: Callable[[], float] = time.monotonic,
-                 locate=lookup_location, fade_seconds: float = 30):
-        self.driver, self.state_path = driver, state_path
+                 locate=lookup_location, on_change: Callable[[dict], None] | None = None):
+        self.state_path = state_path
         self.location_override, self.location_fallback = location_override, location_fallback
-        self.clock, self.monotonic, self.locate = clock, monotonic, locate
-        self.fade_seconds = fade_seconds
+        self.clock, self.locate, self.on_change = clock, locate, on_change
         self.state = BrightnessState()
         self.storage_error: str | None = None
         self._load_failed = False
         self.location_error: str | None = None
         self.schedule_error: str | None = None
-        self.driver_error: str | None = None
-        self.write_error: str | None = None
-        self.reading: Reading | None = None
-        self.target: int | None = None
         self.next_transition: datetime | None = None
-        self._fade: tuple[float, float] | None = None
-        self._last_written: float | None = None
-        self._retry_write_at = 0.0
-        self._last_evaluation = -math.inf
+        self._transition_seconds = 0.0
         self._next_lookup: datetime | None = None
         self._lock = asyncio.Lock()
         self._tasks: list[asyncio.Task] = []
@@ -217,7 +124,7 @@ class BrightnessController:
         except (OSError, ValueError, KeyError) as exc:
             self._load_failed = True
             self.storage_error = f"Cannot load brightness state: {exc}"
-            # Never apply defaults over an unreadable/corrupt saved configuration.
+            # Never replace an unreadable/corrupt saved configuration automatically.
             self.state.enabled = False
 
     def _persist(self, state: BrightnessState):
@@ -239,36 +146,26 @@ class BrightnessController:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def location(self) -> tuple[Location | None, str | None]:
+    def location(self, state: BrightnessState | None = None) -> tuple[Location | None, str | None]:
+        state = state if state is not None else self.state
         if self.location_override:
             return self.location_override, "config_override"
-        if self.state.cached_location:
-            return self.state.cached_location.location, "ip_cache"
+        if state.cached_location:
+            return state.cached_location.location, "ip_cache"
         return self.location_fallback, "config_fallback" if self.location_fallback else None
 
-    async def _read(self):
-        try:
-            self.reading = await asyncio.to_thread(self.driver.read)
-            self.driver_error = None
-        except DriverError as exc:
-            self.reading = None
-            self.driver_error = str(exc)
+    def display_snapshot(self, *, initial=False) -> dict:
+        # A commanded content level, never a measurement of the screen or backlight.
+        return {"level_percent": self.state.level_percent,
+                "transition_seconds": 0 if initial else self._transition_seconds}
 
-    async def _evaluate(self, *, immediate=False):
+    def _apply(self, updated: BrightnessState, *, manual=False, require_persistence=False):
+        """Commit one complete policy decision while holding the controller lock."""
         now = self.clock()
-        self._last_evaluation = self.monotonic()
-        override = self.state.override
-        if override and override.expires_at <= now:
-            updated = self.state.model_copy(deep=True)
+        if updated.override and updated.override.expires_at <= now:
             updated.override = None
-            try:
-                self._persist(updated)
-                self.state = updated
-            except OSError:
-                pass  # An expired override never controls the screen, even if disk is unwritable.
-            override = None
+        location, _ = self.location(updated)
         self.schedule_error = None
-        location, _ = self.location()
         self.next_transition = None
         daylight = None
         if location:
@@ -278,50 +175,30 @@ class BrightnessController:
                 self.schedule_error = f"Cannot calculate sun schedule: {exc}"
         else:
             self.schedule_error = "No usable location; automatic brightness is paused"
-
-        target = None
-        if self.state.enabled:
-            if override:
-                target = override.percent
+        if updated.enabled:
+            if updated.override:
+                updated.level_percent = updated.override.percent
             elif daylight is not None:
-                target = self.state.day_percent if daylight else self.state.night_percent
-        if target != self.target or immediate:
-            self.target = target
-            self._fade = None
-            self._last_written = None
-            self._retry_write_at = 0
-            if target is not None:
-                await self._read()
-                # Manual adjustments apply on the next worker tick; automatic transitions fade.
-                if not immediate and self.reading and self.fade_seconds > 0:
-                    self._fade = (self.monotonic(), self.reading.requested_percent)
+                updated.level_percent = updated.day_percent if daylight else updated.night_percent
+        changed = updated.level_percent != self.state.level_percent
+        if updated != self.state or require_persistence:
+            try:
+                self._persist(updated)
+            except OSError:
+                if require_persistence:
+                    raise  # Remote mutations must not claim that unsaved settings were accepted.
+                # An expired override must not keep controlling the display after a disk error.
+        self.state = updated
+        if changed or manual:
+            # Publish even a repeated manual level: it must stop an automatic fade
+            # whose destination happens to equal the new manual setting.
+            self._transition_seconds = 0.0 if manual else 30.0
+            if self.on_change:
+                self.on_change(self.display_snapshot())
 
     async def tick(self):
-        """One serialized scheduler/driver step; exposed for deterministic tests."""
         async with self._lock:
-            override = self.state.override
-            if (self.monotonic() - self._last_evaluation >= 60 or
-                    override is not None and override.expires_at <= self.clock()):
-                await self._evaluate()
-            if self.target is None or self.monotonic() < self._retry_write_at:
-                return
-            value = float(self.target)
-            if self._fade:
-                start, initial = self._fade
-                fraction = min(1, max(0, (self.monotonic() - start) / self.fade_seconds))
-                value = round(initial + (self.target - initial) * fraction, 1)
-                if fraction == 1:
-                    self._fade = None
-            if value == self._last_written:
-                return
-            try:
-                await asyncio.to_thread(self.driver.write, value)
-                self.write_error = None
-                self._last_written = value
-                await self._read()
-            except DriverError as exc:
-                self.write_error = str(exc)
-                self._retry_write_at = self.monotonic() + 60
+            self._apply(self.state.model_copy(deep=True))
 
     async def refresh_location(self):
         if self.location_override or self._load_failed:
@@ -337,10 +214,8 @@ class BrightnessController:
             async with self._lock:
                 updated = self.state.model_copy(deep=True)
                 updated.cached_location = CachedLocation(location=location, fetched_at=self.clock())
-                self._persist(updated)
-                self.state = updated
+                self._apply(updated, require_persistence=True)
                 self.location_error = None
-                await self._evaluate()
         except Exception as exc:
             self.location_error = f"IP location lookup/cache failed: {exc}"
             self._next_lookup = self.clock() + timedelta(hours=1)
@@ -364,47 +239,43 @@ class BrightnessController:
                 updated.override = None
             if body.action == "resume":
                 updated.enabled = True
-            self._persist(updated)  # Commit before changing policy or writing hardware.
-            self.state = updated
-            await self._evaluate(immediate=body.action == "manual")
-        await self.tick()
-        return await self.status()
+            self._apply(updated, manual=body.action == "manual", require_persistence=True)
+            return self._status()
+
+    def _status(self) -> dict:
+        location, source = self.location()
+        override = self.state.override
+        if override and override.expires_at <= self.clock():
+            override = None
+        return {
+            **self.display_snapshot(), "method": "software",
+            "enabled": self.state.enabled,
+            "mode": "disabled" if not self.state.enabled else "override" if override else "automatic",
+            "day_percent": self.state.day_percent, "night_percent": self.state.night_percent,
+            "override": override.model_dump(mode="json") if override else None,
+            "next_transition": self.next_transition.isoformat() if self.next_transition else None,
+            "location": location.model_dump() if location else None,
+            "location_source": source,
+            "errors": {"schedule": self.schedule_error, "location": self.location_error, "storage": self.storage_error},
+        }
 
     async def status(self) -> dict:
         async with self._lock:
-            await self._read()
-            location, source = self.location()
-            override = self.state.override
-            if override and override.expires_at <= self.clock():
-                override = None
-            return {
-                "enabled": self.state.enabled,
-                "mode": "disabled" if not self.state.enabled else "override" if override else "automatic",
-                "day_percent": self.state.day_percent, "night_percent": self.state.night_percent,
-                "target_percent": self.target,
-                "reported_percent": self.reading.percent if self.reading else None,
-                "reading": self.reading.model_dump() if self.reading else None,
-                "override": override.model_dump(mode="json") if override else None,
-                "next_transition": self.next_transition.isoformat() if self.next_transition else None,
-                "location": location.model_dump() if location else None,
-                "location_source": source,
-                "location_cached_at": self.state.cached_location.fetched_at.isoformat() if self.state.cached_location else None,
-                "driver": self.driver.name, "available": self.reading is not None,
-                "simulated": self.driver.name == "simulated",
-                "errors": {"hardware": self.driver_error or self.write_error, "schedule": self.schedule_error,
-                           "location": self.location_error, "storage": self.storage_error},
-            }
+            return self._status()
 
     async def start(self):
         await self.tick()
 
         async def worker():
             while True:
-                await asyncio.sleep(0.5)
+                delay = 60.0
+                if self.state.override:
+                    delay = min(delay, max(0.1, (self.state.override.expires_at - self.clock()).total_seconds()))
+                await asyncio.sleep(delay)
                 try:
                     await self.tick()
                 except Exception:
-                    logger.exception("Brightness worker step failed")
+                    logger.exception("Brightness schedule step failed")
 
         async def locations():
             while True:
@@ -414,27 +285,20 @@ class BrightnessController:
         self._tasks = [asyncio.create_task(worker()), asyncio.create_task(locations())]
 
     async def stop(self):
-        # Finish any in-flight hardware operation before cancellation, including its to_thread call.
-        async with self._lock:
-            for task in self._tasks:
-                task.cancel()
+        for task in self._tasks:
+            task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
 
 
-def controller_from_env() -> BrightnessController:
-    driver_name = os.getenv("BRIGHTNESS_DRIVER", "linux")
-    if driver_name not in ("linux", "simulated"):
-        raise ValueError("BRIGHTNESS_DRIVER must be linux or simulated")
-    device = os.getenv("BRIGHTNESS_DEVICE")
-    driver = SimulatedBacklight() if driver_name == "simulated" else LinuxBacklight(Path(device) if device else None)
-
+def controller_from_env(*, on_change: Callable[[dict], None] | None = None) -> BrightnessController:
     def configured_location(name):
         raw = os.getenv(name)
         return Location.model_validate_json(raw) if raw else None
 
     return BrightnessController(
-        driver, Path(os.getenv("BRIGHTNESS_STATE_PATH", str(Path(__file__).parent / "state" / "brightness.json"))),
+        Path(os.getenv("BRIGHTNESS_STATE_PATH", str(Path(__file__).parent / "state" / "brightness.json"))),
         location_override=configured_location("BRIGHTNESS_LOCATION_OVERRIDE"),
         location_fallback=configured_location("BRIGHTNESS_LOCATION_FALLBACK"),
+        on_change=on_change,
     )

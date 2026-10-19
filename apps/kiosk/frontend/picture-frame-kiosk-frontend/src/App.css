@@ -91,3 +91,17 @@ html, body, #root {
   text-align: center;
   text-shadow: 0 10px 30px rgba(0,0,0,0.55);
 }
+
+.screen-dimmer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: #000;
+  pointer-events: none;
+  transition-property: opacity;
+  transition-timing-function: linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-dimmer { transition: none !important; }
+}

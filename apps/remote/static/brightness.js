@@ -21,13 +21,11 @@
   }
 
   function render(state) {
-    controls.disabled = false; // Settings and recovery remain usable even without a backlight.
-    slider.disabled = !state.available;
-    byId("brightnessSimulation").hidden = !state.simulated;
+    controls.disabled = false;
     const labels = { disabled: "Birtustýring óvirk", override: "Handvirk birta", automatic: "Sjálfvirk birta" };
     byId("brightnessStatus").textContent = labels[state.mode] || state.mode;
     if (!editingSlider && queue.length === 0) {
-      const shown = state.override?.percent ?? state.target_percent ?? state.reported_percent ?? 40;
+      const shown = state.level_percent;
       slider.value = String(Math.round(shown));
       value.textContent = `${Math.round(shown)}%`;
     }
@@ -36,8 +34,7 @@
       night.value = state.night_percent;
     }
     const details = [];
-    if (state.reported_percent != null) details.push(`Tilkynnt birta: ${state.reported_percent.toFixed(1)}%`);
-    if (state.target_percent != null) details.push(`Markmið: ${state.target_percent}%`);
+    details.push(`Birta myndefnis: ${state.level_percent}%`);
     if (state.override) details.push(`Sjálfvirk birta hefst aftur: ${dateLabel(state.override.expires_at, state.location?.timezone)}`);
     if (state.next_transition) details.push(`Næsta sólarbreyting: ${dateLabel(state.next_transition, state.location?.timezone)}`);
     if (state.location) {

@@ -7,8 +7,8 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "../apps/remote/static/brightness.js"), "utf8");
 
 function state(extra = {}) {
-  return { enabled: true, available: true, mode: "automatic", simulated: true,
-    day_percent: 80, night_percent: 15, target_percent: 80, reported_percent: 40,
+  return { enabled: true, method: "software", mode: "automatic",
+    day_percent: 80, night_percent: 15, level_percent: 80,
     errors: {}, ...extra };
 }
 
@@ -38,34 +38,30 @@ function setup(respond) {
   return { element, calls, poll: () => intervals[0]() };
 }
 
-test("renders simulation, target/readback, own-frame URL and location", async () => {
+test("renders software level, own-frame URL and location", async () => {
   const ui = setup(async () => ({ ok: true, json: async () => state({
-    override: { percent: 35, expires_at: "2026-10-16T17:00:00Z" }, mode: "override",
+    level_percent: 35, override: { percent: 35, expires_at: "2026-10-16T17:00:00Z" }, mode: "override",
     location: { latitude: 52.37, longitude: 4.90, timezone: "Europe/Amsterdam" }, location_source: "ip_cache",
   }) }));
   await flush();
   assert.equal(ui.calls[0].url, "/api/adam/brightness");
-  assert.equal(ui.element("brightnessSimulation").hidden, false);
   assert.equal(ui.element("brightnessSlider").value, "35");
-  assert.match(ui.element("brightnessDetails").textContent, /40.0%/);
+  assert.match(ui.element("brightnessDetails").textContent, /35%/);
   assert.match(ui.element("brightnessDetails").textContent, /IP-áætlun/);
 });
 
-test("unavailable hardware disables slider but leaves settings and recovery usable", async () => {
-  const ui = setup(async () => ({ ok: true, json: async () => state({
-    available: false, reported_percent: null, errors: { hardware: "No Linux backlight found" },
-  }) }));
+test("software controls are usable without hardware capability flags", async () => {
+  const ui = setup();
   await flush();
-  assert.equal(ui.element("brightnessSlider").disabled, true);
   assert.equal(ui.element("brightnessControls").disabled, false);
-  assert.match(ui.element("brightnessError").textContent, /No Linux backlight/);
+  assert.equal(ui.element("brightnessSlider").value, "80");
 });
 
 test("slider mutations serialize and newest queued value wins", async () => {
   let finish;
   const ui = setup(async (call) => {
     if (call.method === "PUT" && !finish) await new Promise((resolve) => { finish = resolve; });
-    return { ok: true, json: async () => state({ target_percent: call.body?.manual_percent ?? 80 }) };
+    return { ok: true, json: async () => state({ level_percent: call.body?.manual_percent ?? 80 }) };
   });
   await flush();
   const slider = ui.element("brightnessSlider");
@@ -111,7 +107,7 @@ test("stale polling cannot overwrite a newer command response", async () => {
   let finish;
   const ui = setup(async (call, number) => {
     if (number === 2) await new Promise((resolve) => { finish = resolve; });
-    return { ok: true, json: async () => state({ target_percent: call.method === "PUT" ? 25 : 80 }) };
+    return { ok: true, json: async () => state({ level_percent: call.method === "PUT" ? 25 : 80 }) };
   });
   await flush();
   ui.poll();

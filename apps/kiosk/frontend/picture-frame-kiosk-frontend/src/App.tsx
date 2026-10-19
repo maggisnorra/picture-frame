@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { FrameLayout, MediaSurface } from './components/FrameLayout'
 import { VolumeToast, CallIncoming, CallOutgoing } from './components/Overlays'
 import { useKioskEvents } from "./hooks/useKioskEvents";
+import { useBrightness } from './hooks/useBrightness'
+import { ScreenDimmer } from './components/ScreenDimmer'
 import './App.css'
 import type { CallPayload, PictureSnapshot } from './types/push';
 
@@ -14,6 +16,7 @@ export const MAX_VOLUME = 100;
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api"; // "" for same-origin kiosk
 
 export default function App() {
+  const { brightness, applyBrightness } = useBrightness(API_BASE)
   const [mode, setMode] = useState<Mode>("picture")
   const [callMode, setCallMode] = useState<CallMode>(null)
 
@@ -136,6 +139,7 @@ export default function App() {
   useKioskEvents({
     apiBase: API_BASE,
     onMessage: (msg) => {
+      if (msg.event === "brightness") applyBrightness(msg.data)
       if (msg.event === "volume") {
         flashVolume(msg.data.volume_percent);
       }
@@ -165,6 +169,7 @@ export default function App() {
   // })
 
   return (
+    <>
     <FrameLayout media={<MediaSurface mode={mode} photoUrl={photoUrl} pictureEmpty={pictureEmpty} />}>
       {showVol && <VolumeToast value={volume} />}
       {callMode === "callee" && (
@@ -174,5 +179,7 @@ export default function App() {
         <CallOutgoing />
       )}
     </FrameLayout>
+    <ScreenDimmer brightness={brightness} />
+    </>
   )
 }

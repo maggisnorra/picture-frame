@@ -49,7 +49,7 @@ class SlideshowIn(BaseModel):
 
 
 class BrightnessIn(BaseModel):
-    """Mirror kiosk input validation without importing its hardware dependencies."""
+    """Validate brightness commands before forwarding them to the kiosk."""
 
     model_config = {"extra": "forbid"}
     action: Literal["settings", "manual", "resume"] = "settings"
