@@ -11,6 +11,10 @@
 
   const logEl = document.getElementById("log");
   if (logEl) logEl.hidden = !DEBUG;
+  for (const id of ["brightnessDetails", "brightnessError"]) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !DEBUG;
+  }
 
   function log(msg) {
     if (!DEBUG || !logEl) return;
