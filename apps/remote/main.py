@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
@@ -174,6 +175,15 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+def asset_url(filename: str) -> str:
+    """Change the URL when asset contents change, including across container rebuilds."""
+    digest = hashlib.sha256((BASE_DIR / "static" / filename).read_bytes()).hexdigest()[:16]
+    return f"/static/{filename}?v={digest}"
+
+
+templates.env.globals["asset_url"] = asset_url
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return FileResponse(BASE_DIR / "static" / "favicon.ico")
@@ -188,6 +198,7 @@ def controller_page(request: Request, self_user: User):
             "self_user": self_user,
             "other_user": other(self_user),
         },
+        headers={"Cache-Control": "no-store"},
     )
 
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fjarstýring</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/cyborg/bootstrap.min.css">
-  <link rel="stylesheet" href="/static/remote.css">
+  <link rel="stylesheet" href="{{ asset_url('remote.css') }}">
   <link rel="icon" href="/static/favicon.ico">
 </head>
 <body data-self="{{ self_user }}" data-other="{{ other_user }}">
@@ -195,8 +195,8 @@
     <pre class="mt-3 p-3 border rounded bg-dark text-light" id="log">ready</pre>
   </div>
 
-  <script src="/static/remote.js" defer></script>
-  <script src="/static/brightness.js" defer></script>
-  <script src="/static/radio.js" defer></script>
+  <script src="{{ asset_url('remote.js') }}" defer></script>
+  <script src="{{ asset_url('brightness.js') }}" defer></script>
+  <script src="{{ asset_url('radio.js') }}" defer></script>
 </body>
 </html>
