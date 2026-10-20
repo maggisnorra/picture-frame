@@ -314,6 +314,16 @@ async def radio_put(self_user: str, body: RadioIn):
     return await frame_put(_ensure_user(self_user), "/radio", json=body.model_dump(mode="json"))
 
 
+@app.post("/api/{self_user}/radio/play")
+async def radio_play(self_user: str):
+    return await frame_post(_ensure_user(self_user), "/radio/play")
+
+
+@app.post("/api/{self_user}/radio/stop")
+async def radio_stop(self_user: str):
+    return await frame_post(_ensure_user(self_user), "/radio/stop")
+
+
 @app.post("/api/{self_user}/picture", status_code=201)
 async def picture(self_user: str, file: UploadFile = File(...)):
     me = _ensure_user(self_user)

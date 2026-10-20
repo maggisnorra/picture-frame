@@ -49,6 +49,22 @@ async def radio_put(body: RadioSettings):
         raise HTTPException(503, "Cannot persist radio settings; inspect service logs")
 
 
+@api.post("/radio/play")
+async def radio_play():
+    try:
+        return await require_radio().play()
+    except OSError:
+        raise HTTPException(503, "Cannot persist radio playback; inspect service logs")
+
+
+@api.post("/radio/stop")
+async def radio_stop():
+    try:
+        return await require_radio().stop_playback()
+    except OSError:
+        raise HTTPException(503, "Cannot persist radio playback; inspect service logs")
+
+
 def require_brightness() -> BrightnessController:
     if _brightness is None:
         raise HTTPException(503, _brightness_init_error or "Brightness controller is starting")

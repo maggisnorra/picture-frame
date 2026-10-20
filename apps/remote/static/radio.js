@@ -7,6 +7,7 @@
   const container = byId("radioSchedules");
   const error = byId("radioError");
   const station = byId("radioStation");
+  const playbackButtons = [byId("radioPlay"), byId("radioStop")];
   const ras2 = "https://ruv-radio-live.akamaized.net/streymi/ras2/ras2.m3u8";
   const weekdays = ["Mánudagur", "Þriðjudagur", "Miðvikudagur", "Fimmtudagur", "Föstudagur", "Laugardagur", "Sunnudagur"];
   let busy = false;
@@ -20,8 +21,12 @@
     error.hidden = !message;
   }
 
-  async function request(method, body) {
-    const response = await fetch(url, {
+  function updatePlaybackButtons() {
+    playbackButtons.forEach((button) => { button.disabled = busy || !loaded; });
+  }
+
+  async function request(method, body, action = "") {
+    const response = await fetch(url + action, {
       method, cache: "no-store",
       ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
     });
@@ -42,7 +47,14 @@
         : "Útvarpstímar bíða eftir staðsetningu og tímabelti rammans.";
     }
     byId("radioAdd").disabled = !activeTimezone;
-    byId("radioStatus").textContent = !activeTimezone ? "Bíður eftir staðsetningu" : state.error ? "Ekki tókst að spila útvarp" : state.playing ? "Útvarp í gangi" : state.active ? "Útvarp að ræsa…" : "Útvarp bíður næsta tíma";
+    let status;
+    if (state.error) status = "Ekki tókst að spila útvarp";
+    else if (state.mode === "manual") {
+      const until = new Intl.DateTimeFormat("is-IS", { ...(activeTimezone ? { timeZone: activeTimezone } : {}), weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(state.manual_until));
+      status = `Handvirk spilun · stöðvast sjálfkrafa ${until}`;
+    } else if (state.mode === "stopping") status = "Útvarp að stöðvast…";
+    else status = !activeTimezone ? "Bíður eftir staðsetningu" : state.playing ? "Útvarp í gangi" : state.active ? "Útvarp að ræsa…" : "Útvarp bíður næsta tíma";
+    byId("radioStatus").textContent = status;
     showError([state.error, state.storage_error].filter(Boolean).join(" · "));
   }
 
@@ -84,12 +96,14 @@
     if (busy) return;
     revision += 1;
     busy = true;
+    updatePlaybackButtons();
     controls.disabled = true;
     byId("radioCard").setAttribute("aria-busy", "true");
     try { renderSettings(await request("GET")); }
     catch (err) { showError(`Ekki tókst að sækja útvarpsstillingar: ${err.message}`); }
     finally {
       busy = false;
+      updatePlaybackButtons();
       controls.disabled = !loaded;
       byId("radioCard").setAttribute("aria-busy", "false");
     }
@@ -97,6 +111,17 @@
 
   byId("radioRas2").addEventListener("click", () => { station.value = ras2; });
   byId("radioReload").addEventListener("click", load);
+  async function playback(action) {
+    if (busy || !loaded) return;
+    revision += 1;
+    busy = true;
+    updatePlaybackButtons();
+    try { renderStatus(await request("POST", null, `/${action}`)); }
+    catch (err) { showError(`Ekki tókst að ${action === "play" ? "spila" : "stöðva"} útvarp: ${err.message}`); }
+    finally { busy = false; updatePlaybackButtons(); }
+  }
+  byId("radioPlay").addEventListener("click", () => playback("play"));
+  byId("radioStop").addEventListener("click", () => playback("stop"));
   byId("radioAdd").addEventListener("click", () => {
     if (!activeTimezone) { showError("Bíddu eftir staðsetningu og tímabelti rammans."); return; }
     let startDate;
@@ -118,12 +143,13 @@
     const settings = { station_url: station.value, schedules };
     revision += 1;
     busy = true;
+    updatePlaybackButtons();
     controls.disabled = true;
     try {
       renderSettings(await request("PUT", settings));
       byId("radioStatus").textContent = "Útvarpsstillingar vistaðar";
     } catch (err) { showError(`Ekki tókst að vista útvarpsstillingar: ${err.message}`); }
-    finally { busy = false; controls.disabled = false; }
+    finally { busy = false; controls.disabled = false; updatePlaybackButtons(); }
   });
 
   load();

@@ -152,6 +152,10 @@
           <div class="card-body" id="radioCard" aria-busy="true">
             <div id="radioStatus" class="status-text mb-2" role="status" aria-live="polite">Sæki útvarpsstillingar...</div>
             <div id="radioError" class="status-text mb-2" data-tone="error" role="alert" hidden></div>
+            <div class="d-flex flex-wrap gap-2 mb-2" role="group" aria-label="Útvarpsspilun">
+              <button id="radioPlay" class="btn btn-info" type="button" disabled>▶ Play</button>
+              <button id="radioStop" class="btn btn-outline-danger" type="button" disabled>■ Stop</button>
+            </div>
             <form id="radioForm">
               <fieldset id="radioControls" disabled>
                 <div class="row g-3 mb-3">

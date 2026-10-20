@@ -144,3 +144,80 @@ test("timezone hint is updated when included in a page", async () => {
   assert.match(ui.element("radioTimezoneHint").textContent, /Atlantic\/Reykjavik/);
   assert.equal(ui.element("radioError").hidden, true);
 });
+
+test("play and stop use own-frame commands without saving or replacing edits", async () => {
+  const ui = setup(async (call) => {
+    const data = state();
+    if (call.url.endsWith("/play")) Object.assign(data, { mode: "manual", manual_until: "2026-10-20T15:00:00Z", playing: true });
+    if (call.url.endsWith("/stop")) data.mode = "stopping";
+    return { ok: true, json: async () => data };
+  });
+  await flush();
+  ui.element("radioStation").value = "https://example.org/unsaved.mp3";
+  assert.equal(ui.element("radioPlay").disabled, false);
+  await ui.element("radioPlay").fire("click");
+  assert.equal(ui.calls.at(-1).url, "/api/adam/radio/play");
+  assert.equal(ui.calls.at(-1).method, "POST");
+  assert.equal(ui.calls.at(-1).body, null);
+  assert.match(ui.element("radioStatus").textContent, /Handvirk spilun.*stöðvast sjálfkrafa/);
+  assert.equal(ui.element("radioStation").value, "https://example.org/unsaved.mp3");
+  await ui.element("radioPlay").fire("click");
+  assert.equal(ui.calls.at(-1).url, "/api/adam/radio/play");
+  await ui.element("radioStop").fire("click");
+  assert.equal(ui.calls.at(-1).url, "/api/adam/radio/stop");
+  assert.match(ui.element("radioStatus").textContent, /stöðvast/);
+  assert.equal(ui.element("radioStop").disabled, false);
+});
+
+test("play is available and manual status is visible without a timezone", async () => {
+  const ui = setup(async (call) => ({ ok: true, json: async () => ({
+    ...state(), timezone: null,
+    ...(call.method === "POST" ? { mode: "manual", manual_until: "2026-10-20T15:00:00Z" } : {}),
+  }) }));
+  await flush();
+  assert.equal(ui.element("radioAdd").disabled, true);
+  assert.equal(ui.element("radioPlay").disabled, false);
+  await ui.element("radioPlay").fire("click");
+  assert.match(ui.element("radioStatus").textContent, /Handvirk spilun/);
+  assert.equal(ui.element("radioError").hidden, true);
+});
+
+test("a stale poll cannot overwrite a playback command and pending commands are not duplicated", async () => {
+  let finishPoll, finishPlay;
+  const ui = setup(async (call, number) => {
+    if (number === 2) await new Promise((resolve) => { finishPoll = resolve; });
+    if (call.method === "POST") await new Promise((resolve) => { finishPlay = resolve; });
+    return { ok: true, json: async () => ({ ...state(), ...(call.method === "POST" ? { mode: "manual", manual_until: "2026-10-20T15:00:00Z" } : {}) }) };
+  });
+  await flush();
+  const poll = ui.poll();
+  const play = ui.element("radioPlay").fire("click");
+  assert.equal(ui.element("radioPlay").disabled, true);
+  assert.equal(ui.element("radioStop").disabled, true);
+  await ui.element("radioPlay").fire("click");
+  assert.equal(ui.calls.filter((call) => call.method === "POST").length, 1);
+  finishPlay();
+  await play;
+  const manualStatus = ui.element("radioStatus").textContent;
+  finishPoll();
+  await poll;
+  assert.match(manualStatus, /Handvirk spilun/);
+  assert.equal(ui.element("radioStatus").textContent, manualStatus);
+  assert.equal(ui.element("radioStop").disabled, false);
+});
+
+test("failed commands show the error and allow retry", async () => {
+  let failed = true;
+  const ui = setup(async (call) => {
+    if (call.method === "POST" && failed) return { ok: false, status: 503, json: async () => ({ detail: "frame offline" }) };
+    return { ok: true, json: async () => state() };
+  });
+  await flush();
+  await ui.element("radioStop").fire("click");
+  assert.match(ui.element("radioError").textContent, /frame offline/);
+  assert.equal(ui.element("radioPlay").disabled, false);
+  assert.equal(ui.element("radioStop").disabled, false);
+  failed = false;
+  await ui.element("radioStop").fire("click");
+  assert.equal(ui.element("radioError").hidden, true);
+});

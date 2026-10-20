@@ -9,16 +9,19 @@ import os
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl, model_validator
 from brightness import Location
 
 UTC = timezone.utc
 FADE_SECONDS = 120
+MANUAL_FADE_SECONDS = 5
+MANUAL_DURATION = timedelta(hours=8)
 DEFAULT_STATION_URL = "https://ruv-radio-live.akamaized.net/streymi/ras2/ras2.m3u8"
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,28 @@ class RadioSettings(BaseModel):
         return self
 
 
-def active_radio(settings: RadioSettings, now: datetime, timezone_name: str | None) -> tuple[float, list[str]]:
+class RadioPlayback(BaseModel):
+    """Persist manual intent so restarting cannot undo Stop or reset its timer."""
+
+    model_config = ConfigDict(extra="forbid")
+    manual_started_at: AwareDatetime | None = None
+    fade_in_started_at: AwareDatetime | None = None
+    play_factor: float = Field(default=0, ge=0, le=1)
+    stopped_at: AwareDatetime | None = None
+    stop_factor: float = Field(default=0, ge=0, le=1)
+
+
+@dataclass
+class RadioPolicy:
+    factor: float
+    active: bool
+    schedule_ids: list[str]
+    mode: str
+    manual_until: datetime | None = None
+
+
+def active_radio(settings: RadioSettings, now: datetime, timezone_name: str | None, *,
+                 starts_after: datetime | None = None) -> tuple[float, list[str]]:
     """Recover active windows after restart, including windows crossing midnight.
 
     Durations are real elapsed minutes. Skip nonexistent DST times and use the first
@@ -67,13 +91,19 @@ def active_radio(settings: RadioSettings, now: datetime, timezone_name: str | No
                 continue
             local = datetime.combine(day, clock_time.fromisoformat(entry.start_time), tzinfo=tz)
             start = local.astimezone(UTC)
+            if starts_after is not None and start <= starts_after:
+                continue
             if start.astimezone(tz).replace(tzinfo=None) != local.replace(tzinfo=None):
                 continue
             elapsed = (now - start).total_seconds()
             remaining = entry.duration_minutes * 60 - elapsed
             if elapsed >= 0 and remaining > 0:
                 active.append(entry.id)
-                factor = max(factor, min(1.0, elapsed / FADE_SECONDS, remaining / FADE_SECONDS))
+                # An occurrence starting during a manual stop waits for that
+                # fade to reach zero, then starts its own fade from zero too.
+                fade_start = max(start, starts_after + timedelta(seconds=MANUAL_FADE_SECONDS)) if starts_after else start
+                fade_elapsed = max(0.0, (now - fade_start).total_seconds())
+                factor = max(factor, min(1.0, fade_elapsed / FADE_SECONDS, remaining / FADE_SECONDS))
     return factor, active
 
 
@@ -165,6 +195,9 @@ class RadioController:
         self.player = player
         self.location_provider = location_provider
         self.settings = RadioSettings()
+        self.playback = RadioPlayback()
+        self._factor = 0.0
+        self._poll_interval = 0.5
         self.error: str | None = None
         self.storage_error: str | None = None
         self._task: asyncio.Task | None = None
@@ -176,21 +209,50 @@ class RadioController:
                 saved = json.loads(path.read_text(encoding="utf-8"))
                 if isinstance(saved, dict):
                     saved.pop("timezone", None)  # Migrate schedules saved before timezone followed location.
+                    playback = RadioPlayback.model_validate(saved.pop("playback", {}))
+                else:
+                    playback = RadioPlayback()
                 self.settings = RadioSettings.model_validate(saved)
+                self.playback = playback
             except (ValueError, OSError) as exc:
                 self.storage_error = f"Cannot load radio settings: {exc}"
                 logger.exception("Cannot load radio settings")
 
-    def status(self):
+    def _policy(self, now: datetime, timezone_name: str | None) -> RadioPolicy:
+        stopped_at = self.playback.stopped_at
+        stop_factor = self.playback.stop_factor
+        if self.playback.manual_started_at is not None:
+            until = self.playback.manual_started_at + MANUAL_DURATION
+            if now < until:
+                fade_start = self.playback.fade_in_started_at or self.playback.manual_started_at
+                progress = max(0.0, min(1.0, (now - fade_start).total_seconds() / MANUAL_FADE_SECONDS))
+                factor = self.playback.play_factor + (1 - self.playback.play_factor) * progress
+                return RadioPolicy(factor, True, [], "manual", until)
+            # Timeout behaves exactly like Stop, including cancelling occurrences
+            # that began during the override. Derive it from the persisted deadline
+            # so a restart after expiry cannot bring an old schedule back to life.
+            stopped_at, stop_factor = until, 1.0
+        if stopped_at is not None:
+            elapsed = (now - stopped_at).total_seconds()
+            if elapsed < MANUAL_FADE_SECONDS:
+                factor = stop_factor * max(0.0, min(1.0, 1 - elapsed / MANUAL_FADE_SECONDS))
+                return RadioPolicy(factor, factor > 0, [], "stopping")
+        factor, active = active_radio(self.settings, now, timezone_name, starts_after=stopped_at)
+        return RadioPolicy(factor, bool(active), active, "scheduled")
+
+    def status(self, now: datetime | None = None):
         location, source = self.location_provider()
         timezone_name = location.timezone if location else None
-        factor, active = active_radio(self.settings, datetime.now(UTC), timezone_name)
+        policy = self._policy(now or datetime.now(UTC), timezone_name)
         return {
             "settings": self.settings.model_dump(mode="json"),
             "timezone": timezone_name, "timezone_source": source,
             "timezone_error": None if location else "Radio scheduling is paused until the frame's location is available",
-            "active": bool(active), "active_schedule_ids": active,
-            "fade_factor": factor, "fade_seconds": FADE_SECONDS,
+            "active": policy.active, "active_schedule_ids": policy.schedule_ids,
+            "fade_factor": policy.factor, "fade_seconds": FADE_SECONDS,
+            "mode": policy.mode,
+            "manual_until": policy.manual_until.isoformat() if policy.manual_until else None,
+            "manual_fade_seconds": MANUAL_FADE_SECONDS,
             "playing": self.player.playing,
             "error": self.error, "storage_error": self.storage_error,
         }
@@ -201,7 +263,9 @@ class RadioController:
         try:
             with tempfile.NamedTemporaryFile(mode="w", dir=self.path.parent, delete=False, encoding="utf-8") as file:
                 name = file.name
-                file.write(settings.model_dump_json(indent=2))
+                saved = settings.model_dump(mode="json")
+                saved["playback"] = self.playback.model_dump(mode="json")
+                file.write(json.dumps(saved, indent=2))
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(name, self.path)
@@ -222,23 +286,65 @@ class RadioController:
             self._wake.set()
         return self.status()
 
+    async def _set_playback(self, playback: RadioPlayback, now: datetime):
+        previous = self.playback
+        self.playback = playback
+        try:
+            self._persist(self.settings)
+        except OSError as exc:
+            self.playback = previous
+            self.storage_error = f"Cannot save radio playback: {exc}"
+            raise
+        self.storage_error = None
+        self._retry_at = 0
+        self._wake.set()
+        await self._step_locked(now)
+        return self.status(now)
+
+    async def play(self, now: datetime | None = None):
+        async with self._lock:
+            now = now or datetime.now(UTC)
+            factor = self._factor if self.player.playing else 0.0
+            playback = RadioPlayback(manual_started_at=now, fade_in_started_at=now, play_factor=factor)
+            if self.player.playing and self.playback.manual_started_at is not None:
+                until = self.playback.manual_started_at + MANUAL_DURATION
+                if now < until:
+                    # Repeated Play refreshes only the override deadline. Keep an
+                    # existing upward fade's trajectory and completion time.
+                    playback.fade_in_started_at = self.playback.fade_in_started_at or self.playback.manual_started_at
+                    playback.play_factor = self.playback.play_factor
+            return await self._set_playback(playback, now)
+
+    async def stop_playback(self, now: datetime | None = None):
+        async with self._lock:
+            now = now or datetime.now(UTC)
+            factor = self._factor if self.player.playing else 0.0
+            return await self._set_playback(RadioPlayback(stopped_at=now, stop_factor=factor), now)
+
     async def step(self, now: datetime | None = None):
         async with self._lock:
-            location, _ = self.location_provider()
-            factor, active = active_radio(self.settings, now or datetime.now(UTC), location.timezone if location else None)
-            if not active:
-                await self.player.stop()
+            await self._step_locked(now or datetime.now(UTC))
+
+    async def _step_locked(self, now: datetime):
+        location, _ = self.location_provider()
+        policy = self._policy(now, location.timezone if location else None)
+        self._poll_interval = 0.1 if policy.mode == "stopping" or (policy.mode == "manual" and policy.factor < 1) else 0.5
+        if not policy.active:
+            await self.player.stop()
+            self._factor = 0.0
+            self.error = None
+            self._retry_at = 0
+        elif time.monotonic() >= self._retry_at:
+            try:
+                await self.player.apply(str(self.settings.station_url), policy.factor)
+                self._factor = policy.factor
                 self.error = None
-                self._retry_at = 0
-            elif time.monotonic() >= self._retry_at:
-                try:
-                    await self.player.apply(str(self.settings.station_url), factor)
-                    self.error = None
-                except Exception as exc:
-                    await self.player.stop()
-                    self.error = f"Cannot play radio: {exc}"
-                    self._retry_at = time.monotonic() + 15
-                    logger.warning("%s", self.error)
+            except Exception as exc:
+                await self.player.stop()
+                self._factor = 0.0
+                self.error = f"Cannot play radio: {exc}"
+                self._retry_at = time.monotonic() + 15
+                logger.warning("%s", self.error)
 
     async def start(self):
         async def worker():
@@ -249,7 +355,7 @@ class RadioController:
                 except Exception:
                     logger.exception("Radio schedule step failed")
                 try:
-                    await asyncio.wait_for(self._wake.wait(), 0.5)
+                    await asyncio.wait_for(self._wake.wait(), self._poll_interval)
                 except asyncio.TimeoutError:
                     pass
         self._task = asyncio.create_task(worker())
