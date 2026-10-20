@@ -5,13 +5,16 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { randomUUID } = require("node:crypto");
 const source = fs.readFileSync(path.join(__dirname, "../apps/remote/static/radio.js"), "utf8");
+const template = fs.readFileSync(path.join(__dirname, "../apps/remote/templates/remote.html"), "utf8");
+const templateIds = new Set([...template.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const stationUrl = "https://example.com/live.mp3";
 const entry = { id: "saved-id", start_date: "2026-10-19", weekday: 0, start_time: "07:00", duration_minutes: 30, enabled: true };
 const state = () => ({ settings: { station_url: stationUrl, schedules: [{ ...entry }] }, timezone: "Atlantic/Reykjavik", active: false, playing: false });
 
-function setup(respond) {
+function setup(respond, extraIds = []) {
   const elements = new Map(), calls = [], intervals = [], html = [];
+  const availableIds = new Set([...templateIds, ...extraIds]);
   function element(id) {
     if (elements.has(id)) return elements.get(id);
     const el = {
@@ -29,7 +32,7 @@ function setup(respond) {
     return el;
   }
   vm.runInNewContext(source, {
-    document: { body: { dataset: { self: "adam" } }, getElementById: element, createElement: () => element(randomUUID()) },
+    document: { body: { dataset: { self: "adam" } }, getElementById: (id) => availableIds.has(id) ? element(id) : null, createElement: () => element(randomUUID()) },
     window: { setInterval(callback) { intervals.push(callback); } },
     crypto: { randomUUID }, Option: function () {}, Intl, Date,
     fetch: async (url, init) => {
@@ -120,7 +123,24 @@ test("radio follows the frame timezone from status and waits when geolocation is
   timezone = "Europe/Amsterdam";
   await ui.poll();
   assert.equal(ui.element("radioAdd").disabled, false);
-  assert.match(ui.element("radioTimezoneHint").textContent, /Europe\/Amsterdam/);
+  assert.equal(ui.element("radioError").hidden, true);
   ui.element("radioAdd").fire("click");
   assert.equal(ui.element("radioSchedules").children.length, 2);
+});
+
+test("radio loads and polls with the actual template when the optional timezone hint is absent", async () => {
+  const ui = setup();
+  await flush();
+  assert.equal(ui.element("radioError").hidden, true);
+  assert.equal(ui.element("radioStatus").textContent, "Útvarp bíður næsta tíma");
+  assert.equal(ui.element("radioAdd").disabled, false);
+  await ui.poll();
+  assert.equal(ui.element("radioError").hidden, true);
+});
+
+test("timezone hint is updated when included in a page", async () => {
+  const ui = setup(undefined, ["radioTimezoneHint"]);
+  await flush();
+  assert.match(ui.element("radioTimezoneHint").textContent, /Atlantic\/Reykjavik/);
+  assert.equal(ui.element("radioError").hidden, true);
 });

@@ -35,9 +35,12 @@
 
   function renderStatus(state) {
     activeTimezone = state.timezone || null;
-    byId("radioTimezoneHint").textContent = activeTimezone
-      ? `Útvarpstímar nota ${activeTimezone}, sama tímabelti og sólarupprás og sólsetur.`
-      : "Útvarpstímar bíða eftir staðsetningu og tímabelti rammans.";
+    const timezoneHint = byId("radioTimezoneHint");
+    if (timezoneHint) {
+      timezoneHint.textContent = activeTimezone
+        ? `Útvarpstímar nota ${activeTimezone}, sama tímabelti og sólarupprás og sólsetur.`
+        : "Útvarpstímar bíða eftir staðsetningu og tímabelti rammans.";
+    }
     byId("radioAdd").disabled = !activeTimezone;
     byId("radioStatus").textContent = !activeTimezone ? "Bíður eftir staðsetningu" : state.error ? "Ekki tókst að spila útvarp" : state.playing ? "Útvarp í gangi" : state.active ? "Útvarp að ræsa…" : "Útvarp bíður næsta tíma";
     showError([state.error, state.storage_error].filter(Boolean).join(" · "));
