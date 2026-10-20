@@ -47,7 +47,8 @@ test("renders software level, own-frame URL and location", async () => {
   assert.equal(ui.calls[0].url, "/api/adam/brightness");
   assert.equal(ui.element("brightnessSlider").value, "35");
   assert.match(ui.element("brightnessDetails").textContent, /35%/);
-  assert.match(ui.element("brightnessDetails").textContent, /IP-áætlun/);
+  assert.match(ui.element("locationSource").textContent, /IP-áætlun/);
+  assert.equal(ui.element("locationTimezone").textContent, "Europe/Amsterdam");
 });
 
 test("software controls are usable without hardware capability flags", async () => {
@@ -145,4 +146,42 @@ test("rejects invalid settings without sending commands", async () => {
   await ui.element("brightnessSettings").fire("submit");
   assert.equal(ui.calls.length, 1);
   assert.match(ui.element("brightnessError").textContent, /5 til 100/);
+});
+
+test("separate location card shows geolocation and timezone without debug mode", async () => {
+  const ui = setup(async () => ({ ok: true, json: async () => state({
+    location: { latitude: 52.37, longitude: 4.90, timezone: "Europe/Amsterdam", city: "Amsterdam", country: "Netherlands" },
+    location_source: "ip_cache", local_time: "2026-10-20T07:00:00+02:00",
+    location_fetched_at: "2026-10-20T04:00:00Z", next_transition: "2026-10-20T06:13:00Z",
+  }) }));
+  await flush();
+  assert.equal(ui.element("locationName").textContent, "Amsterdam, Netherlands");
+  assert.equal(ui.element("locationTimezone").textContent, "Europe/Amsterdam");
+  assert.equal(ui.element("locationCoordinates").textContent, "52.3700, 4.9000");
+  assert.match(ui.element("locationLocalTime").textContent, /07:00/);
+  assert.notEqual(ui.element("locationUpdated").textContent, "—");
+  assert.notEqual(ui.element("locationSunChange").textContent, "—");
+  assert.equal(ui.element("locationError").hidden, true);
+});
+
+test("location card exposes missing geolocation, cached lookup errors and offline status", async () => {
+  let response = state({ location: null });
+  let offline = false;
+  const ui = setup(async () => {
+    if (offline) throw new Error("offline");
+    return { ok: true, json: async () => response };
+  });
+  await flush();
+  assert.equal(ui.element("locationTimezone").textContent, "—");
+  assert.match(ui.element("locationStatus").textContent, /bíða eftir tímabelti/);
+  response = state({ location: { latitude: 52.37, longitude: 4.9, timezone: "Europe/Amsterdam" }, location_source: "ip_cache", errors: { location: "lookup failed" } });
+  await ui.poll();
+  await flush();
+  assert.equal(ui.element("locationTimezone").textContent, "Europe/Amsterdam");
+  assert.equal(ui.element("locationError").hidden, false);
+  offline = true;
+  await ui.poll();
+  await flush();
+  assert.match(ui.element("locationStatus").textContent, /síðast þekktu/);
+  assert.equal(ui.element("locationTimezone").textContent, "Europe/Amsterdam");
 });

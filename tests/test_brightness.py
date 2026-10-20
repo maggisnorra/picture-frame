@@ -211,6 +211,32 @@ def test_lookup_response_validation():
     run(scenario())
 
 
+def test_lookup_retains_city_country_and_active_timezone_for_location_card():
+    async def scenario():
+        async def get(*args, **kwargs):
+            body = {"latitude": 52.37, "longitude": 4.90, "timezone": "Europe/Amsterdam", "city": "Amsterdam", "country_name": "Netherlands"}
+            return httpx.Response(200, json=body, request=httpx.Request("GET", "https://ipapi.co/json/"))
+        with patch("brightness.httpx.AsyncClient.get", new=get):
+            location = await lookup_location()
+            assert location.city == "Amsterdam"
+            assert location.country == "Netherlands"
+            assert location.timezone == "Europe/Amsterdam"
+    run(scenario())
+
+
+def test_location_status_uses_frame_local_time_and_persisted_lookup_date(tmp_path):
+    async def scenario():
+        service, clock = make_controller(tmp_path)
+        fetched_at = clock.now - timedelta(hours=1)
+        service.state.cached_location = CachedLocation(location=AMSTERDAM, fetched_at=fetched_at)
+        status = await service.status()
+        assert status["local_time"] == "2026-10-16T14:00:00+02:00"
+        assert status["location_fetched_at"] == fetched_at.isoformat()
+        service.location_override = TROMSO
+        assert (await service.status())["location_fetched_at"] is None
+    run(scenario())
+
+
 def test_storage_failure_does_not_change_policy_or_publish(tmp_path):
     async def scenario():
         service, _ = make_controller(tmp_path)

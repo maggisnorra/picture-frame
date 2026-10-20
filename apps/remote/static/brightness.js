@@ -20,7 +20,27 @@
     return new Date(raw).toLocaleString("is-IS", timezone ? { timeZone: timezone } : undefined);
   }
 
+  function renderLocation(state) {
+    const locationCard = byId("locationCard");
+    if (!locationCard) return;
+    const location = state.location;
+    const sources = { config_override: "Stilling rammans", ip_cache: "IP-áætlun (vistuð)", config_fallback: "Varastilling rammans" };
+    byId("locationName").textContent = location ? [location.city, location.country].filter(Boolean).join(", ") || "Staðsetning eftir hnitum" : "Óþekkt";
+    byId("locationCoordinates").textContent = location ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : "—";
+    byId("locationTimezone").textContent = location?.timezone || "—";
+    byId("locationLocalTime").textContent = state.local_time && location ? dateLabel(state.local_time, location.timezone) : "—";
+    byId("locationSource").textContent = sources[state.location_source] || state.location_source || "—";
+    byId("locationUpdated").textContent = state.location_fetched_at && location ? dateLabel(state.location_fetched_at, location.timezone) : "—";
+    byId("locationSunChange").textContent = state.next_transition && location ? dateLabel(state.next_transition, location.timezone) : "—";
+    byId("locationStatus").textContent = location ? "Virk staðsetning fyrir útvarp og sólarbreytingar" : "Staðsetning óþekkt. Útvarpstímar bíða eftir tímabelti.";
+    const locationError = byId("locationError");
+    locationError.textContent = state.errors?.location || "";
+    locationError.hidden = !locationError.textContent;
+    locationCard.setAttribute("aria-busy", "false");
+  }
+
   function render(state) {
+    renderLocation(state);
     controls.disabled = false;
     const labels = { disabled: "Birtustýring óvirk", override: "Handvirk birta", automatic: "Sjálfvirk birta" };
     byId("brightnessStatus").textContent = labels[state.mode] || state.mode;
@@ -37,10 +57,6 @@
     details.push(`Birta myndefnis: ${state.level_percent}%`);
     if (state.override) details.push(`Sjálfvirk birta hefst aftur: ${dateLabel(state.override.expires_at, state.location?.timezone)}`);
     if (state.next_transition) details.push(`Næsta sólarbreyting: ${dateLabel(state.next_transition, state.location?.timezone)}`);
-    if (state.location) {
-      const sources = { config_override: "stilling", ip_cache: "IP-áætlun", config_fallback: "varastilling" };
-      details.push(`Staðsetning (${sources[state.location_source] || state.location_source}): ${state.location.latitude.toFixed(2)}, ${state.location.longitude.toFixed(2)} · ${state.location.timezone}`);
-    }
     byId("brightnessDetails").textContent = details.join("\n");
     error.textContent = Object.values(state.errors || {}).filter(Boolean).join(" · ");
     card.setAttribute("aria-busy", "false");
@@ -64,6 +80,12 @@
       if (started === revision && !sending) render(state);
     } catch (err) {
       if (started !== revision || sending) return;
+      if (byId("locationCard")) {
+        byId("locationStatus").textContent = "Ekki tókst að sækja staðsetningu. Gildi sem sjást eru síðast þekktu upplýsingar.";
+        byId("locationError").textContent = err.message;
+        byId("locationError").hidden = false;
+        byId("locationCard").setAttribute("aria-busy", "false");
+      }
       error.textContent = `Ekki tókst að sækja birtustillingar: ${err.message}`;
       controls.disabled = true;
       card.setAttribute("aria-busy", "false");

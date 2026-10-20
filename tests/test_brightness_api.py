@@ -125,6 +125,9 @@ def test_remote_page_contains_accessible_brightness_controls():
     assert 'id="brightnessSlider"' in response.text
     assert 'for="brightnessSlider"' in response.text
     assert '/static/brightness.js' in response.text
+    assert 'id="locationCard"' in response.text
+    assert 'id="locationTimezone"' in response.text
+    assert 'id="radioTimezone"' not in response.text
 
 
 def test_kiosk_html_bootstraps_brightness_without_browser_storage(tmp_path, monkeypatch):

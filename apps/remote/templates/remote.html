@@ -112,9 +112,9 @@
               <div>
                 <h2 class="h6 mb-0">Vistaðar myndir</h2>
               </div>
-              <span class="text-body-secondary small" id="playlistSummary">Loading...</span>
+              <span class="text-body-secondary small" id="playlistSummary" role="status" aria-live="polite">Titlar ekki sóttir</span>
             </div>
-
+            <button type="button" class="btn btn-outline-info align-self-start" id="pictureTitlesLoadBtn" aria-controls="partnerPlaylist">Sækja myndatitla</button>
             <div id="partnerPlaylist" class="playlist-grid"></div>
           </div>
         </div>
@@ -124,9 +124,10 @@
         <div class="d-flex flex-column gap-4 h-100">
           <div class="card flex-fill">
             <div class="card-header">Núverandi mynd</div>
-            <div class="card-body">
+            <div class="card-body d-flex flex-column gap-3">
+              <button type="button" class="btn btn-outline-info align-self-start" id="frameCurrentLoadBtn" aria-controls="frameCurrentImg">Sjá núverandi mynd</button>
               <img id="frameCurrentImg" class="img-fluid rounded border preview16x10 d-none" alt="Núverandi mynd á ramma">
-              <div id="frameCurrentEmpty" class="frame-empty preview16x10">Engin mynd</div>
+              <div id="frameCurrentEmpty" class="frame-empty preview16x10" role="status" aria-live="polite">Mynd ekki sótt</div>
             </div>
           </div>
 
@@ -145,6 +146,50 @@
           </div>
         </div>
       </div>
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">Útvarp</div>
+          <div class="card-body" id="radioCard" aria-busy="true">
+            <div id="radioStatus" class="status-text mb-2" role="status" aria-live="polite">Sæki útvarpsstillingar...</div>
+            <div id="radioError" class="status-text mb-2" data-tone="error" role="alert" hidden></div>
+            <form id="radioForm">
+              <fieldset id="radioControls" disabled>
+                <div class="row g-3 mb-3">
+                  <div class="col-12">
+                    <label for="radioStation" class="form-label">Slóð á hljóðstreymi</label>
+                    <input id="radioStation" class="form-control" type="url" required placeholder="https://…/stream.mp3" aria-describedby="radioStationHint">
+                    <button id="radioRas2" class="btn btn-sm btn-outline-secondary mt-2" type="button">Rás 2</button>
+                  </div>
+                </div>
+                <div id="radioSchedules" class="d-flex flex-column gap-3 mb-3"></div>
+                <div class="d-flex flex-wrap gap-2">
+                  <button id="radioAdd" class="btn btn-outline-info" type="button">Bæta við tíma</button>
+                  <button class="btn btn-info" type="submit">Vista útvarpsstillingar</button>
+                </div>
+              </fieldset>
+            </form>
+            <button id="radioReload" class="btn btn-sm btn-outline-secondary mt-3" type="button">Sækja aftur</button>
+          </div>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">Staðsetning</div>
+          <div class="card-body" id="locationCard" aria-busy="true">
+            <div id="locationStatus" class="status-text mb-2" role="status" aria-live="polite">Sæki staðsetningu...</div>
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Staðsetning</dt><dd class="col-sm-8" id="locationName">—</dd>
+              <dt class="col-sm-4">Hnit</dt><dd class="col-sm-8" id="locationCoordinates">—</dd>
+              <dt class="col-sm-4">Tímabelti</dt><dd class="col-sm-8" id="locationTimezone">—</dd>
+              <dt class="col-sm-4">Staðartími</dt><dd class="col-sm-8" id="locationLocalTime">—</dd>
+              <dt class="col-sm-4">Uppruni staðsetningar</dt><dd class="col-sm-8" id="locationSource">—</dd>
+              <dt class="col-sm-4">Síðast sótt</dt><dd class="col-sm-8" id="locationUpdated">—</dd>
+              <dt class="col-sm-4">Næsta sólsetur/sólarupprás</dt><dd class="col-sm-8" id="locationSunChange">—</dd>
+            </dl>
+            <div id="locationError" class="status-text" data-tone="error" role="alert" hidden></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <pre class="mt-3 p-3 border rounded bg-dark text-light" id="log">ready</pre>
@@ -152,5 +197,6 @@
 
   <script src="/static/remote.js" defer></script>
   <script src="/static/brightness.js" defer></script>
+  <script src="/static/radio.js" defer></script>
 </body>
 </html>

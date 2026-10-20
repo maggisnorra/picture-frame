@@ -37,15 +37,6 @@
     else el.removeAttribute("data-tone");
   }
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
   function formatInterval(seconds) {
     if (!Number.isFinite(seconds)) return "-";
     if (seconds < 60) return `${seconds} sekúndur`;
@@ -79,8 +70,10 @@
   const uploadStatusEl = document.getElementById("pictureUploadStatus");
   const playlistEl = document.getElementById("partnerPlaylist");
   const playlistSummaryEl = document.getElementById("playlistSummary");
+  const titlesLoadBtn = document.getElementById("pictureTitlesLoadBtn");
   const frameImg = document.getElementById("frameCurrentImg");
   const frameEmptyEl = document.getElementById("frameCurrentEmpty");
+  const frameLoadBtn = document.getElementById("frameCurrentLoadBtn");
 
   const intervalInput = document.getElementById("slideshowIntervalInput");
   const intervalSaveBtn = document.getElementById("slideshowSaveBtn");
@@ -92,7 +85,8 @@
 
   let previewUrl = null;
   let playlistRefreshToken = 0;
-  let playlistPollHandle = null;
+  let titlesLoaded = false;
+  const playlistItems = new Map();
 
   function showSelectionPreview(file) {
     const hasFile = !!file;
@@ -134,12 +128,24 @@
       return;
     }
 
+    frameEmptyEl.textContent = "Sæki mynd...";
+    frameEmptyEl.classList.remove("d-none");
+    frameImg.classList.add("d-none");
+    frameImg.onload = () => {
+      frameImg.classList.remove("d-none");
+      frameEmptyEl.classList.add("d-none");
+    };
+    frameImg.onerror = () => {
+      frameImg.removeAttribute("src");
+      frameImg.classList.add("d-none");
+      frameEmptyEl.textContent = "Ekki tókst að sækja mynd. Reyndu aftur.";
+      frameEmptyEl.classList.remove("d-none");
+    };
     frameImg.src = `${API}/picture?t=${meta.updated_at || Date.now()}`;
-    frameImg.classList.remove("d-none");
-    frameEmptyEl.classList.add("d-none");
   }
 
   async function refreshCurrentPicture() {
+    if (frameLoadBtn) setBtnEnabled(frameLoadBtn, false);
     try {
       const meta = await reqJson("GET", "picture/meta");
       renderCurrentPictureMeta(meta);
@@ -152,6 +158,8 @@
         frameEmptyEl.classList.remove("d-none");
       }
       return false;
+    } finally {
+      if (frameLoadBtn) setBtnEnabled(frameLoadBtn, true);
     }
   }
 
@@ -178,16 +186,66 @@
     }
   }
 
-  function bindPlaylistActions() {
-    if (!playlistEl) return;
-    for (const el of playlistEl.querySelectorAll("[data-delete-picture-id]")) {
-      el.addEventListener("click", async (event) => {
-        event.preventDefault();
-        const pictureId = el.getAttribute("data-delete-picture-id") || "";
-        if (!pictureId) return;
-        await deletePicture(pictureId, el);
-      });
-    }
+  function createPlaylistItem(image) {
+    const element = document.createElement("div");
+    element.className = "playlist-item";
+    const thumbnail = document.createElement("img");
+    thumbnail.className = "playlist-thumb d-none";
+    const meta = document.createElement("div");
+    meta.className = "playlist-meta";
+    const name = document.createElement("div");
+    name.className = "playlist-name";
+    const actions = document.createElement("div");
+    actions.className = "playlist-actions";
+    const show = document.createElement("button");
+    show.type = "button";
+    show.className = "btn btn-sm btn-outline-info";
+    show.textContent = "Sjá mynd";
+    const status = document.createElement("div");
+    status.className = "status-text";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "btn btn-sm btn-outline-danger";
+    remove.textContent = "Eyða";
+    remove.addEventListener("click", () => deletePicture(image.picture_id, remove));
+
+    let showing = false;
+    show.addEventListener("click", () => {
+      if (showing) {
+        thumbnail.removeAttribute("src");
+        thumbnail.classList.add("d-none");
+        show.textContent = "Sjá mynd";
+        show.setAttribute("aria-expanded", "false");
+        setStatus(status, "");
+        showing = false;
+        return;
+      }
+      showing = true;
+      setBtnEnabled(show, false);
+      setStatus(status, "Sæki mynd...");
+      thumbnail.onload = () => {
+        thumbnail.classList.remove("d-none");
+        show.textContent = "Fela mynd";
+        show.setAttribute("aria-expanded", "true");
+        setBtnEnabled(show, true);
+        setStatus(status, "");
+      };
+      thumbnail.onerror = () => {
+        showing = false;
+        thumbnail.removeAttribute("src");
+        thumbnail.classList.add("d-none");
+        setBtnEnabled(show, true);
+        setStatus(status, "Ekki tókst að sækja mynd. Reyndu aftur.", "error");
+      };
+      thumbnail.src = `${API}/pictures/${encodeURIComponent(image.picture_id)}/file?t=${encodeURIComponent(image.uploaded_at || 0)}`;
+    });
+    show.setAttribute("aria-expanded", "false");
+    actions.append(show, remove);
+    meta.append(name, actions, status);
+    element.append(thumbnail, meta);
+    return { element, thumbnail, name, uploadedAt: image.uploaded_at };
   }
 
   function renderPlaylist(playlist) {
@@ -200,53 +258,55 @@
     if (!playlistEl) return;
 
     if (playlist.empty || !Array.isArray(playlist.images) || playlist.images.length === 0) {
+      playlistItems.clear();
       playlistEl.innerHTML = `<div class="frame-empty">Engar myndir</div>`;
       return;
     }
 
-    playlistEl.innerHTML = playlist.images
-      .map((image) => {
-        const isCurrent = image.picture_id === playlist.current_picture_id;
-        const url = `${API}/pictures/${encodeURIComponent(image.picture_id)}/file?t=${image.uploaded_at || Date.now()}`;
-        return `
-          <div class="playlist-item">
-            <img class="playlist-thumb" src="${url}" alt="${escapeHtml(image.filename)}">
-            <div class="playlist-meta">
-              <div class="playlist-name">${escapeHtml(image.filename)}</div>
-              <div class="playlist-actions">
-                <button type="button" class="btn btn-sm btn-outline-danger" data-delete-picture-id="${escapeHtml(image.picture_id)}">Eyða</button>
-              </div>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
-
-    bindPlaylistActions();
+    const ids = new Set();
+    const rows = playlist.images.map((image) => {
+      ids.add(image.picture_id);
+      let item = playlistItems.get(image.picture_id);
+      if (!item || item.uploadedAt !== image.uploaded_at) {
+        item = createPlaylistItem(image);
+        playlistItems.set(image.picture_id, item);
+      }
+      item.name.textContent = image.filename;
+      item.thumbnail.alt = image.filename;
+      return item.element;
+    });
+    for (const id of playlistItems.keys()) {
+      if (!ids.has(id)) playlistItems.delete(id);
+    }
+    playlistEl.replaceChildren(...rows);
   }
 
   async function refreshPartnerPictures() {
+    if (!titlesLoaded) return;
     const refreshToken = ++playlistRefreshToken;
+    setBtnEnabled(titlesLoadBtn, false);
+    if (playlistSummaryEl) playlistSummaryEl.textContent = "Sæki titla...";
     try {
       const playlist = await reqJson("GET", "pictures");
       if (refreshToken !== playlistRefreshToken) return;
       renderPlaylist(playlist);
-      await refreshCurrentPicture();
     } catch (err) {
+      if (refreshToken !== playlistRefreshToken) return;
       log(`ERR GET pictures -> ${err}`);
-      const hasCurrentPicture = await refreshCurrentPicture();
       const playlistUnsupported = String(err).includes("404");
 
       if (playlistSummaryEl) {
-        playlistSummaryEl.textContent = playlistUnsupported ? "Eldri útgáfa" : "Villa";
+        playlistSummaryEl.textContent = playlistUnsupported ? "Eldri útgáfa" : "Ekki tókst að sækja titla";
       }
-      if (playlistEl) {
+      if (playlistEl && playlistItems.size === 0) {
         playlistEl.innerHTML = playlistUnsupported
-          ? `<div class="frame-empty">Error 67</div>`
-          : `<div class="frame-empty">Ekki tókst að sækja myndir</div>`;
+          ? `<div class="frame-empty">Ramminn styður ekki myndalista</div>`
+          : `<div class="frame-empty">Ekki tókst að sækja titla. Reyndu aftur.</div>`;
       }
-      if (!hasCurrentPicture && frameEmptyEl) {
-        frameEmptyEl.textContent = "Ekki tókst að sækja mynd";
+    } finally {
+      if (refreshToken === playlistRefreshToken) {
+        setBtnEnabled(titlesLoadBtn, true);
+        if (titlesLoadBtn) titlesLoadBtn.textContent = "Endurhlaða myndatitla";
       }
     }
   }
@@ -398,11 +458,10 @@
     });
   }
 
-  refreshPartnerPictures();
-  refreshSlideshow();
-
-  if (playlistPollHandle) window.clearInterval(playlistPollHandle);
-  playlistPollHandle = window.setInterval(() => {
+  titlesLoadBtn?.addEventListener("click", () => {
+    titlesLoaded = true;
     refreshPartnerPictures();
-  }, 3000);
+  });
+  frameLoadBtn?.addEventListener("click", refreshCurrentPicture);
+  refreshSlideshow();
 })();

@@ -86,8 +86,12 @@ html, body, #root {
   backdrop-filter: blur(8px);
 
   color: white;
-  font-size: clamp(64px, 8vw, 170px);
-  line-height: 1;
+  font-size: clamp(32px, 6vw, 110px);
+  line-height: 1.15;
+  max-height: 85vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   text-align: center;
   text-shadow: 0 10px 30px rgba(0,0,0,0.55);
 }

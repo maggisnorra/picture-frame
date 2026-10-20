@@ -4,6 +4,7 @@ import { VolumeToast, CallIncoming, CallOutgoing } from './components/Overlays'
 import { useKioskEvents } from "./hooks/useKioskEvents";
 import { useBrightness } from './hooks/useBrightness'
 import { ScreenDimmer } from './components/ScreenDimmer'
+import { useMessages } from './hooks/useMessages'
 import './App.css'
 import type { CallPayload, PictureSnapshot } from './types/push';
 
@@ -17,6 +18,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "/api"; // "" for same-origin 
 
 export default function App() {
   const { brightness, applyBrightness } = useBrightness(API_BASE)
+  const { currentMessage, showMessage } = useMessages()
   const [mode, setMode] = useState<Mode>("picture")
   const [callMode, setCallMode] = useState<CallMode>(null)
 
@@ -43,35 +45,6 @@ export default function App() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [volume])*/
-
-  const reactionHideTimer = useRef<number | null>(null);
-
-  function ensureReactionOverlay() {
-    let el = document.getElementById("reactionOverlay");
-    if (el) return el;
-
-    el = document.createElement("div");
-    el.id = "reactionOverlay";
-    el.innerHTML = `<div class="bubble" id="reactionOverlayText"></div>`;
-    document.body.appendChild(el);
-    return el;
-  }
-
-  function showReaction(message: string, ms = 1600) {
-    const overlay = ensureReactionOverlay();
-    const textEl = document.getElementById("reactionOverlayText");
-    if (textEl) textEl.textContent = String(message ?? "").trim() || "❤️";
-
-    overlay.classList.remove("show");
-    void overlay.offsetHeight;
-    overlay.classList.add("show");
-
-    if (reactionHideTimer.current) clearTimeout(reactionHideTimer.current);
-    reactionHideTimer.current = window.setTimeout(() => {
-      overlay.classList.remove("show");
-    }, ms);
-  }
-
 
   const volTimer = useRef<number | null>(null);
   function flashVolume(v: number) {
@@ -155,7 +128,7 @@ export default function App() {
       }
 
       if (msg.event === "reaction") {
-        showReaction(msg.data.message);
+        showMessage(msg.data.message);
       }
     },
   });
@@ -179,6 +152,11 @@ export default function App() {
         <CallOutgoing />
       )}
     </FrameLayout>
+    {currentMessage && (
+      <div id="reactionOverlay" className="show" key={currentMessage.id} role="status" aria-live="polite">
+        <div className="bubble">{currentMessage.text}</div>
+      </div>
+    )}
     <ScreenDimmer brightness={brightness} />
     </>
   )

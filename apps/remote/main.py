@@ -3,13 +3,14 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 import uuid
+from datetime import date
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
 User = Literal["adam", "steve"]
@@ -46,6 +47,28 @@ app = FastAPI(title="Remote Controller (UI + API)")
 
 class SlideshowIn(BaseModel):
     interval_seconds: int = Field(ge=5, le=3600)
+
+
+class RadioScheduleIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, min_length=1, max_length=80)
+    start_date: date
+    weekday: int = Field(strict=True, ge=0, le=6)
+    start_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    duration_minutes: int = Field(strict=True, ge=1, le=1440)
+    enabled: bool = True
+
+
+class RadioIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    station_url: HttpUrl
+    schedules: list[RadioScheduleIn] = Field(max_length=100)
+
+    @model_validator(mode="after")
+    def valid_settings(self):
+        if len({entry.id for entry in self.schedules}) != len(self.schedules):
+            raise ValueError("Schedule IDs must be unique")
+        return self
 
 
 class BrightnessIn(BaseModel):
@@ -268,6 +291,16 @@ async def reaction(self_user: str, body: Dict[str, Any]):
     if not isinstance(msg, str) or not msg.strip():
         raise HTTPException(400, "message required")
     return await frame_post(them, "/reaction", json={"message": msg.strip()})
+
+
+@app.get("/api/{self_user}/radio")
+async def radio_get(self_user: str):
+    return await frame_get(_ensure_user(self_user), "/radio")
+
+
+@app.put("/api/{self_user}/radio")
+async def radio_put(self_user: str, body: RadioIn):
+    return await frame_put(_ensure_user(self_user), "/radio", json=body.model_dump(mode="json"))
 
 
 @app.post("/api/{self_user}/picture", status_code=201)

@@ -25,6 +25,8 @@ class Location(BaseModel):
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
     timezone: str
+    city: str | None = None
+    country: str | None = None
 
     @model_validator(mode="after")
     def valid_timezone(self):
@@ -97,7 +99,8 @@ async def lookup_location() -> Location:
         response = await client.get("https://ipapi.co/json/")
         response.raise_for_status()
         data = response.json()
-        return Location(latitude=data["latitude"], longitude=data["longitude"], timezone=data["timezone"])
+        return Location(latitude=data["latitude"], longitude=data["longitude"], timezone=data["timezone"],
+                        city=data.get("city"), country=data.get("country_name"))
 
 
 class BrightnessController:
@@ -256,6 +259,8 @@ class BrightnessController:
             "next_transition": self.next_transition.isoformat() if self.next_transition else None,
             "location": location.model_dump() if location else None,
             "location_source": source,
+            "local_time": self.clock().astimezone(ZoneInfo(location.timezone)).isoformat() if location else None,
+            "location_fetched_at": self.state.cached_location.fetched_at.isoformat() if source == "ip_cache" else None,
             "errors": {"schedule": self.schedule_error, "location": self.location_error, "storage": self.storage_error},
         }
 

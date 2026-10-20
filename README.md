@@ -231,6 +231,16 @@ npm run build
 
 Remember to set the Chromium version.
 
+### Radio and chime sound
+
+RÚV Rás 2 is the default station, using the stream returned by [RÚV's player configuration](https://geo.spilari.ruv.is/channel/ras2).
+
+Install the audio tools on frames:
+```sh
+sudo apt-get update
+sudo apt-get install -y mpv pulseaudio-utils
+```
+
 
 ### Kiosk mode
 

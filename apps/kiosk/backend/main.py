@@ -10,12 +10,14 @@ import threading
 import time
 import uuid
 import logging
+from chime import play_chime
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from brightness import BrightnessController, BrightnessUpdate, controller_from_env
+from radio import RadioController, RadioSettings, radio_from_env
 
 
 app = FastAPI(title="Kiosk Backend")
@@ -23,6 +25,28 @@ api = APIRouter(prefix="/api")
 
 _brightness: BrightnessController | None = None
 _brightness_init_error: str | None = None
+_radio: RadioController | None = None
+_radio_init_error: str | None = None
+_chime_tasks: set[asyncio.Task] = set()
+
+
+def require_radio() -> RadioController:
+    if _radio is None:
+        raise HTTPException(503, _radio_init_error or "Radio controller is starting")
+    return _radio
+
+
+@api.get("/radio")
+async def radio_get():
+    return require_radio().status()
+
+
+@api.put("/radio")
+async def radio_put(body: RadioSettings):
+    try:
+        return await require_radio().update(body)
+    except OSError:
+        raise HTTPException(503, "Cannot persist radio settings; inspect service logs")
 
 
 def require_brightness() -> BrightnessController:
@@ -293,8 +317,11 @@ class ReactionIn(BaseModel):
 
 
 @api.post("/reaction", status_code=202)
-def reaction(body: ReactionIn):
+async def reaction(body: ReactionIn):
     sse_send("reaction", body.model_dump())
+    task = asyncio.create_task(play_chime(SOUND_SINK))
+    _chime_tasks.add(task)
+    task.add_done_callback(_chime_tasks.discard)
     return {"ok": True}
 
 
@@ -593,10 +620,18 @@ async def _slideshow_worker():
 
 @app.on_event("startup")
 async def startup():
-    global _slideshow_task, _brightness, _brightness_init_error
+    global _slideshow_task, _brightness, _brightness_init_error, _radio, _radio_init_error
     with _playlist_lock:
         _load_playlist_state()
     _slideshow_task = asyncio.create_task(_slideshow_worker())
+    try:
+        _radio = radio_from_env(SOUND_SINK, location_provider=lambda: _brightness.location() if _brightness else (None, None))
+        await _radio.start()
+        _radio_init_error = None
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Cannot start radio controller")
+        _radio_init_error = f"Radio initialization failed: {exc}"
+        _radio = None
     try:
         _brightness = controller_from_env(on_change=lambda snapshot: sse_send("brightness", snapshot))
         await _brightness.start()
@@ -609,7 +644,15 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    global _slideshow_task, _brightness
+    global _slideshow_task, _brightness, _radio
+    if _radio is not None:
+        await _radio.stop()
+        _radio = None
+    for task in list(_chime_tasks):
+        task.cancel()
+    if _chime_tasks:
+        await asyncio.gather(*list(_chime_tasks), return_exceptions=True)
+    _chime_tasks.clear()
     if _brightness is not None:
         await _brightness.stop()
         _brightness = None
